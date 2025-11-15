@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<!-- saved from url=(0051)https://kawairun2.jeddahbikers.com/ratingUpdate.php -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Kawairun 2 Global Rating</title>
+<meta name="Description" content="Kawairun 2 Global Rating for all sites hosting the game, use iframe to load the rating.">
+
+<style>
+* {margin:0;padding:0;font-family: "Lucida Grande","Lucida Sans Unicode",Verdana,Arial,Helvetica,sans-serif;font-size: 13pt;color: #000}
+body {margin:0;padding:0;background-color:#FFF}
+#ratingText, #star {float: left;width: 82px;font : 13px/16px 'Tahoma';padding-top:13px;}
+</style>
+<style>.village-iframe{width:100%;height:100%;border:none;display:block;position:fixed;top:0;left:0;z-index:2147483647;background:#0000003d;color-scheme:light}.village-iframe.village-loading{display:flex;justify-content:center;align-items:center}.village-iframe>.village-spinner{width:1.5rem;height:1.5rem;border:2px solid #000;border-left-color:transparent;border-bottom-color:transparent;border-radius:50%;animation:spin .45s linear infinite}.village-iframe.village-hidden{display:none}@keyframes spin{0%{transform:rotate(0)}to{transform:rotate(360deg)}}.village-hidden{display:none}[village-paths-data=facepiles]{display:flex;align-items:center;padding-right:.5rem}[village-paths-data=facepiles] img{width:1.5rem;height:1.5rem;border-radius:50%;margin-right:-.5rem}[village-paths-data=facepiles] img.village-facepiler-avatar-not-found{filter:blur(7px)}[village-paths-data=facepiles] img:last-child{margin-right:0}[village-paths-data=count]{padding-right:.25rem}[village-paths-availability=error],[village-paths-availability=found],[village-paths-availability=not-found],[village-paths-availability=not-activated]{display:none!important}[village-paths-availability=loading]{display:inline-flex!important}</style></head>
+<body>
+<div id="ratingText">Your Rating: </div>
+<div id="star" style="cursor: pointer; width: 140px;"><img src="./star-off.png" class="gameStar" alt="1" title="Hated it 1/5">&nbsp;<img src="./star-off.png" class="gameStar" alt="2" title="Didn&#39;t like it 2/5">&nbsp;<img src="./star-off.png" class="gameStar" alt="3" title="Liked it 3/5">&nbsp;<img src="./star-off.png" class="gameStar" alt="4" title="Really liked it 4/5">&nbsp;<img src="./star-off.png" class="gameStar" alt="5" title="Loved it 5/5"><input type="hidden" name="score"></div>
+<script type="text/javascript" src="./jquery.min(1).js.download"></script>
+<script type="text/javascript" src="./jquery.raty.min.js.download"></script>
+<script type="text/javascript">
+function readCookie(n){
+	return( n = new RegExp('(?:^|;\\s*)'+(''+n).replace(/[-[\]{}()*+?.,\\^$|#\s]/g,'\\$&')+'=([^;]*)').exec(document.cookie))&&n[1];
+}
+$(function() {
+    $.ajax({'url': 'https://kawairun2.jeddahbikers.com/update_counter_v0.1.php','type': 'POST','cache': 'false','data': 'id=1673'
+    });
+});
+$(function() {
+	var CookieValue = readCookie('jbr1673');
+	if(CookieValue){
+		$('#ratingText').html('Overall Rate: '); 
+		$('#star').raty({ readOnly: true, score: 3.88 });
+	}else{
+		$('#ratingText').html('Your Rating: ');
+		$('#star').raty({
+			score       	: 0,
+			path		: 'https://origin5.jeddahbikers.com/templates/images/',
+			size		: 16,
+			starOff		: 'star-off.png',
+			starOn		: 'star-on.png',
+			starHalf	: 'star-half.png',
+			hints       : ['Hated it 1/5', 'Didn\'t like it 2/5', 'Liked it 3/5', 'Really liked it 4/5', 'Loved it 5/5'],
+			click: function(score, evt) {
+				$('#star').raty('readOnly', true);
+				$.ajax({'url': 'https://kawairun2.jeddahbikers.com/ratingUpdate2.php','type': 'POST','cache': 'false','data': 'id=1673&score='+score,
+					success:function(data){
+  						$('#star').html('Thank You');
+					}
+				});
+			}
+		});
+	}
+});
+</script>
+
+</body></html>
