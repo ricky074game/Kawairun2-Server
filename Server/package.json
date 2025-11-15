@@ -1,0 +1,11 @@
+{
+  "name": "kawairun2-server",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Kawairun 2 game server",
+  "main": "web_server.js",
+  "scripts": {
+    "start": "node web_server.js"
+  },
+  "dependencies": {}
+}
