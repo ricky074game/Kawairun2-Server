@@ -12,7 +12,7 @@ The game is accessible at **puzzlebest.tech**
 
 ---
 
-## 🛠️ Building the Project
+## Building the Project
 
 ### 1. KawaiRun2Launcher (Windows)
 
@@ -98,7 +98,7 @@ $env:PORT=8080; node web_server.js
 
 ---
 
-## 🗄️ Database Setup
+## Database Setup
 
 The project uses MySQL/MariaDB for persistence. Run the schema file to create the required tables:
 
@@ -170,7 +170,7 @@ Allows Flash to make cross-domain requests:
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 **Launcher doesn't start:**
 - Ensure .NET 8.0 Runtime is installed
@@ -191,3 +191,4 @@ Allows Flash to make cross-domain requests:
 - For KawaiRun2Launcher: Ensure .NET 8.0 SDK is installed
 
 ---
+
