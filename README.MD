@@ -8,7 +8,7 @@ Kawairun 2 is a multiplayer Flash game that has been restored through three main
 2. **KawaiRunExtension** - A Java-based SmartFoxServer 2X extension for multiplayer functionality
 3. **Server** - A Node.js web server for hosting game assets and serving configuration files
 
-The game is accessible at **puzzlebest.tech**
+The game is accessible at **kawairun2.puzzlebest.tech**
 
 ---
 
@@ -191,4 +191,5 @@ Allows Flash to make cross-domain requests:
 - For KawaiRun2Launcher: Ensure .NET 8.0 SDK is installed
 
 ---
+
 
