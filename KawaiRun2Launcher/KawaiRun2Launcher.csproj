@@ -13,14 +13,4 @@
 		<TrimMode>Link</TrimMode>
 	</PropertyGroup>
 
-	<ItemGroup>
-		<None Remove="flash.exe" />
-		<None Remove="game.swf" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<EmbeddedResource Include="flash.exe" />
-		<EmbeddedResource Include="game.swf" />
-	</ItemGroup>
-
 </Project>
