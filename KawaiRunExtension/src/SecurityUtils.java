@@ -34,7 +34,7 @@ public final class SecurityUtils {
     private static final Base64.Decoder BASE64_DECODER = Base64.getUrlDecoder();
     private static final Set<String> BLOCKED_PASSWORDS = loadBlockedPasswords();
 
-    private static final int MIN_PASSWORD_LENGTH = 8;
+    private static final int MIN_PASSWORD_LENGTH = 3;
     private static final int MAX_PASSWORD_LENGTH = 128;
     private static final int MAX_SAVE_SIZE_BYTES = 1024 * 1024;
     private static final long MAX_COUNTER_VALUE = Integer.MAX_VALUE;

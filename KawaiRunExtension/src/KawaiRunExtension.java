@@ -3,6 +3,7 @@ import com.smartfoxserver.v2.entities.User;
 import com.smartfoxserver.v2.extensions.SFSExtension;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -14,7 +15,7 @@ public class KawaiRunExtension extends SFSExtension {
     private DatabaseManager dbManager;
     private MatchmakingManager matchmakingManager;
 
-    private static final ConcurrentHashMap<String, Long> recentRegistrations = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, RecentRegistrationInfo> recentRegistrations = new ConcurrentHashMap<>();
     private static final long REGISTRATION_GRACE_PERIOD = 2000; // 2 seconds
     private final ConcurrentHashMap<String, FailedLoginState> failedLoginAttempts = new ConcurrentHashMap<>();
     private final Set<String> adminUsers = ConcurrentHashMap.newKeySet();
@@ -71,23 +72,41 @@ public class KawaiRunExtension extends SFSExtension {
     public DatabaseManager getDbManager() { return dbManager; }
     public MatchmakingManager getMatchmakingManager() { return matchmakingManager; }
 
-    public void markRecentRegistration(String username) {
-        recentRegistrations.put(username.toLowerCase(), System.currentTimeMillis());
+    public void markRecentRegistration(String username, String plainPassword) {
+        recentRegistrations.put(
+            username.toLowerCase(Locale.ROOT),
+            new RecentRegistrationInfo(System.currentTimeMillis(), plainPassword)
+        );
     }
 
     public boolean isRecentRegistration(String username) {
-        Long timestamp = recentRegistrations.get(username.toLowerCase());
-        if (timestamp == null) return false;
-        long age = System.currentTimeMillis() - timestamp;
+        RecentRegistrationInfo info = recentRegistrations.get(username.toLowerCase(Locale.ROOT));
+        if (info == null) return false;
+        long age = System.currentTimeMillis() - info.timestamp;
         if (age > REGISTRATION_GRACE_PERIOD) {
-            recentRegistrations.remove(username.toLowerCase());
+            recentRegistrations.remove(username.toLowerCase(Locale.ROOT));
             return false;
         }
         return true;
     }
 
+    public String getRecentRegistrationPassword(String username) {
+        RecentRegistrationInfo info = recentRegistrations.get(username.toLowerCase(Locale.ROOT));
+        if (info == null) {
+            return null;
+        }
+
+        long age = System.currentTimeMillis() - info.timestamp;
+        if (age > REGISTRATION_GRACE_PERIOD) {
+            recentRegistrations.remove(username.toLowerCase(Locale.ROOT));
+            return null;
+        }
+
+        return info.plainPassword;
+    }
+
     public void clearRecentRegistration(String username) {
-        recentRegistrations.remove(username.toLowerCase());
+        recentRegistrations.remove(username.toLowerCase(Locale.ROOT));
     }
 
     public boolean isAdminUser(User user) {
@@ -199,6 +218,16 @@ public class KawaiRunExtension extends SFSExtension {
             this.attempts = attempts;
             this.windowStartedAt = windowStartedAt;
             this.lockedUntil = lockedUntil;
+        }
+    }
+
+    private static class RecentRegistrationInfo {
+        private final long timestamp;
+        private final String plainPassword;
+
+        private RecentRegistrationInfo(long timestamp, String plainPassword) {
+            this.timestamp = timestamp;
+            this.plainPassword = Objects.requireNonNullElse(plainPassword, "");
         }
     }
 }

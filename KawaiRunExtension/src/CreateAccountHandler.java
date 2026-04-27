@@ -49,10 +49,12 @@ public class CreateAccountHandler extends BaseClientRequestHandler {
                     boolean created = dbManager.createAccount(username, passwordHash, saveData);
 
                     if (created) {
-                        parentExt.markRecentRegistration(username);
+                        parentExt.markRecentRegistration(username, plainPassword);
 
                         ISFSObject response = new SFSObject();
                         response.putUtfString("username", username);
+                        // Legacy Flash clients use this echoed value during the immediate post-signup login.
+                        response.putUtfString("passwordE", plainPassword);
                         send("CreatedUser", response, user);
                     } else {
                         ISFSObject response = new SFSObject();

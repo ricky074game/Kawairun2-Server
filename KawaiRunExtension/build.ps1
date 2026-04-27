@@ -4,7 +4,7 @@
 $ErrorActionPreference = 'Stop'
 $PROJECT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SRC_DIR = Join-Path $PROJECT_DIR 'src'
-$OUT_DIR = Join-Path $PROJECT_DIR 'out'
+$OUT_DIR = Join-Path $PROJECT_DIR 'out2'
 $BUILD_DIR = Join-Path $OUT_DIR 'build'
 $JAR_DIR = Join-Path $OUT_DIR 'jar'
 $JAR_NAME = 'KawaiRunExtension.jar'

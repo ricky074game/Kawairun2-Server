@@ -4,6 +4,8 @@ import com.smartfoxserver.v2.core.SFSEventParam;
 import com.smartfoxserver.v2.entities.data.ISFSObject;
 import com.smartfoxserver.v2.exceptions.SFSLoginException;
 import com.smartfoxserver.v2.extensions.BaseServerEventHandler;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 public class LoginHandler extends BaseServerEventHandler {
     @Override
@@ -17,9 +19,9 @@ public class LoginHandler extends BaseServerEventHandler {
         trace("Login attempt for user: " + userName + " in Zone: " + zoneName);
 
         // Check if credentials are in loginParams (EPass field)
-        String actualPassword = password;
+        String ePass = null;
         if (loginParams != null && loginParams.containsKey("EPass")) {
-            actualPassword = loginParams.getUtfString("EPass");
+            ePass = loginParams.getUtfString("EPass");
             trace("Using password from EPass parameter");
         }
 
@@ -67,8 +69,10 @@ public class LoginHandler extends BaseServerEventHandler {
                             // Ignore interruption
                         }
 
+                        String registrationPassword = parentExt.getRecentRegistrationPassword(userName);
+
                         // Verify password
-                        if (dbManager.verifyLogin(userName, actualPassword)) {
+                        if (verifyLoginWithFallbacks(dbManager, userName, password, ePass, registrationPassword)) {
                             trace("Database authentication successful for: " + userName);
                             parentExt.clearFailedLoginAttempts(userName);
 
@@ -87,7 +91,7 @@ public class LoginHandler extends BaseServerEventHandler {
                         }
                     } else {
                         // Normal login flow
-                        if (dbManager.verifyLogin(userName, actualPassword)) {
+                        if (verifyLoginWithFallbacks(dbManager, userName, password, ePass)) {
                             trace("Database authentication successful for: " + userName);
                             parentExt.clearFailedLoginAttempts(userName);
                             getApi().login(session, userName, password, zoneName, loginParams);
@@ -107,5 +111,20 @@ public class LoginHandler extends BaseServerEventHandler {
                 throw new SFSLoginException("Login service is temporarily unavailable");
             }
         }
+    }
+
+    private boolean verifyLoginWithFallbacks(DatabaseManager dbManager, String userName, String... secrets) {
+        Set<String> attemptedSecrets = new LinkedHashSet<>();
+        for (String secret : secrets) {
+            if (secret == null || secret.isEmpty() || !attemptedSecrets.add(secret)) {
+                continue;
+            }
+
+            if (dbManager.verifyLogin(userName, secret)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
