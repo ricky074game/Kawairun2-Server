@@ -9,6 +9,11 @@ public class SaveRequestHandler extends BaseClientRequestHandler {
         trace("SaveRequest from: " + user.getName());
 
         try {
+            if (!SecurityUtils.isValidUsername(user.getName())) {
+                trace("Blocked SaveRequest for guest or invalid user: " + user.getName());
+                return;
+            }
+
             KawaiRunExtension parentExt = (KawaiRunExtension) getParentExtension();
             DatabaseManager dbManager = parentExt.getDbManager();
 

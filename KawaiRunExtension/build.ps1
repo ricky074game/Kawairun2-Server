@@ -8,6 +8,7 @@ $OUT_DIR = Join-Path $PROJECT_DIR 'out'
 $BUILD_DIR = Join-Path $OUT_DIR 'build'
 $JAR_DIR = Join-Path $OUT_DIR 'jar'
 $JAR_NAME = 'KawaiRunExtension.jar'
+$LOCAL_LIB_DIR = Join-Path $PROJECT_DIR 'lib'
 
 $SFS_LIB = Join-Path $env:USERPROFILE 'SmartFoxServer_2X\SFS2X\lib'
 
@@ -40,6 +41,9 @@ if (Test-Path $SFS_LIB) {
     Write-Host "Warning: SmartFoxServer lib directory not found at: $SFS_LIB" -ForegroundColor Yellow
     Write-Host 'If compilation fails, set $SFS_LIB to the correct SmartFoxServer 2X lib path.' -ForegroundColor Yellow
 }
+if (Test-Path $LOCAL_LIB_DIR) {
+    Get-ChildItem -Path $LOCAL_LIB_DIR -Filter '*.jar' | ForEach-Object { $classpathParts += $_.FullName }
+}
 
 $CLASSPATH = $classpathParts -join ';'
 if (-not $CLASSPATH) { $CLASSPATH = '.' }
@@ -66,6 +70,24 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $metaInfSrc = Join-Path $SRC_DIR 'META-INF'
+if (Test-Path $LOCAL_LIB_DIR) {
+    $dependencyJars = Get-ChildItem -Path $LOCAL_LIB_DIR -Filter '*.jar'
+    foreach ($dependencyJar in $dependencyJars) {
+        Write-Host "Bundling dependency $($dependencyJar.Name)..." -ForegroundColor Yellow
+        Push-Location $BUILD_DIR
+        try {
+            & $JAR xf $dependencyJar.FullName
+        } finally {
+            Pop-Location
+        }
+    }
+
+    $metaInfDir = Join-Path $BUILD_DIR 'META-INF'
+    if (Test-Path $metaInfDir) {
+        Get-ChildItem -Path $metaInfDir -Include '*.SF','*.RSA','*.DSA' -Recurse | Remove-Item -Force
+    }
+}
+
 if (Test-Path $metaInfSrc) {
     Write-Host 'Copying META-INF...' -ForegroundColor Yellow
     Copy-Item -Recurse -Force $metaInfSrc -Destination $BUILD_DIR
@@ -75,7 +97,7 @@ $jarPath = Join-Path $JAR_DIR $JAR_NAME
 Write-Host 'Creating JAR file...' -ForegroundColor Yellow
 Push-Location $BUILD_DIR
 try {
-    & $JAR cvfm ..\$JAR_NAME META-INF\MANIFEST.MF *.class > $null
+    & $JAR cvfm ..\$JAR_NAME META-INF\MANIFEST.MF . > $null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: JAR creation failed with exit code $LASTEXITCODE" -ForegroundColor Red
         Pop-Location

@@ -8,6 +8,13 @@ public class GiveCoinsHandler extends BaseClientRequestHandler {
     public void handleClientRequest(User user, ISFSObject params) {
         trace("GiveCoins request from: " + user.getName());
 
+        KawaiRunExtension parentExt = (KawaiRunExtension) getParentExtension();
+        if (!parentExt.isAdminUser(user)) {
+            trace("Blocked GiveCoins attempt from non-admin user: " + user.getName());
+            sendError(user, "Unauthorized");
+            return;
+        }
+
         String targetUsername = params.getUtfString("username");
         long amount = params.getLong("amount");
 

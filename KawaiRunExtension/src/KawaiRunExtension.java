@@ -1,18 +1,30 @@
 import com.smartfoxserver.v2.core.SFSEventType;
+import com.smartfoxserver.v2.entities.User;
 import com.smartfoxserver.v2.extensions.SFSExtension;
+import java.util.Arrays;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class KawaiRunExtension extends SFSExtension {
+    private static final int MAX_FAILED_LOGIN_ATTEMPTS = 5;
+    private static final long FAILED_LOGIN_WINDOW_MS = 10 * 60 * 1000L;
+    private static final long FAILED_LOGIN_LOCKOUT_MS = 15 * 60 * 1000L;
 
     private DatabaseManager dbManager;
     private MatchmakingManager matchmakingManager;
 
     private static final ConcurrentHashMap<String, Long> recentRegistrations = new ConcurrentHashMap<>();
     private static final long REGISTRATION_GRACE_PERIOD = 2000; // 2 seconds
+    private final ConcurrentHashMap<String, FailedLoginState> failedLoginAttempts = new ConcurrentHashMap<>();
+    private final Set<String> adminUsers = ConcurrentHashMap.newKeySet();
+    private final Set<String> welcomeCoinsClaimedUsers = ConcurrentHashMap.newKeySet();
 
     @Override
     public void init() {
         trace("Kawai Run Java Extension Started");
+
+        loadAdminUsers();
 
         dbManager = new DatabaseManager(this);
         if (dbManager.connect()) {
@@ -78,6 +90,71 @@ public class KawaiRunExtension extends SFSExtension {
         recentRegistrations.remove(username.toLowerCase());
     }
 
+    public boolean isAdminUser(User user) {
+        if (user == null || user.getName() == null) {
+            return false;
+        }
+
+        return adminUsers.contains(user.getName().toLowerCase(Locale.ROOT));
+    }
+
+    public boolean claimWelcomeCoins(User user) {
+        if (user == null || !SecurityUtils.isValidUsername(user.getName())) {
+            return false;
+        }
+
+        return welcomeCoinsClaimedUsers.add(user.getName().toLowerCase(Locale.ROOT));
+    }
+
+    public boolean isLoginBlocked(String username) {
+        if (username == null) {
+            return false;
+        }
+
+        FailedLoginState state = failedLoginAttempts.get(username.toLowerCase(Locale.ROOT));
+        if (state == null) {
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        if (state.lockedUntil > now) {
+            return true;
+        }
+
+        if (now - state.windowStartedAt > FAILED_LOGIN_WINDOW_MS) {
+            failedLoginAttempts.remove(username.toLowerCase(Locale.ROOT), state);
+        }
+
+        return false;
+    }
+
+    public void recordFailedLoginAttempt(String username) {
+        if (username == null) {
+            return;
+        }
+
+        String normalized = username.toLowerCase(Locale.ROOT);
+        long now = System.currentTimeMillis();
+
+        failedLoginAttempts.compute(normalized, (key, state) -> {
+            if (state == null || now - state.windowStartedAt > FAILED_LOGIN_WINDOW_MS) {
+                return new FailedLoginState(1, now, 0L);
+            }
+
+            int attempts = state.attempts + 1;
+            long lockedUntil = attempts >= MAX_FAILED_LOGIN_ATTEMPTS ? now + FAILED_LOGIN_LOCKOUT_MS : state.lockedUntil;
+            return new FailedLoginState(attempts, state.windowStartedAt, lockedUntil);
+        });
+    }
+
+    public void clearFailedLoginAttempts(String username) {
+        if (username == null) {
+            return;
+        }
+
+        failedLoginAttempts.remove(username.toLowerCase(Locale.ROOT));
+    }
+
     public String giveCoins(String username, int amount) {
         if (username == null || username.isEmpty()) return "ERROR: Username is required";
         if (amount <= 0) return "ERROR: Amount must be positive";
@@ -91,5 +168,37 @@ public class KawaiRunExtension extends SFSExtension {
         send("CoinSend", response, targetUser);
 
         return "SUCCESS: Gave " + amount + " blue coins to " + username;
+    }
+
+    private void loadAdminUsers() {
+        String configuredAdmins = System.getProperty("kawairun.admin.users");
+        if (configuredAdmins == null || configuredAdmins.trim().isEmpty()) {
+            configuredAdmins = System.getenv("KAWAIRUN_ADMIN_USERS");
+        }
+
+        if (configuredAdmins == null || configuredAdmins.trim().isEmpty()) {
+            trace("No admin allowlist configured. Admin-only commands are disabled.");
+            return;
+        }
+
+        Arrays.stream(configuredAdmins.split(","))
+            .map(String::trim)
+            .filter(value -> !value.isEmpty())
+            .map(value -> value.toLowerCase(Locale.ROOT))
+            .forEach(adminUsers::add);
+
+        trace("Loaded " + adminUsers.size() + " admin user(s) from allowlist.");
+    }
+
+    private static class FailedLoginState {
+        private final int attempts;
+        private final long windowStartedAt;
+        private final long lockedUntil;
+
+        private FailedLoginState(int attempts, long windowStartedAt, long lockedUntil) {
+            this.attempts = attempts;
+            this.windowStartedAt = windowStartedAt;
+            this.lockedUntil = lockedUntil;
+        }
     }
 }

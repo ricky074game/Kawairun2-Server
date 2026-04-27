@@ -18,8 +18,9 @@ public class CheckForCoinsHandler extends BaseClientRequestHandler {
             alreadyClaimed = ((Boolean) prop).booleanValue();
         }
 
+        KawaiRunExtension parentExt = (KawaiRunExtension) getParentExtension();
         long coinsToGive = 0L;
-        if (!alreadyClaimed) {
+        if (!alreadyClaimed && parentExt.claimWelcomeCoins(user)) {
             coinsToGive = ONE_TIME_COINS;
             user.setProperty(CLAIM_PROP, Boolean.TRUE);
             trace("Granted " + coinsToGive + " blue coins to: " + user.getName());

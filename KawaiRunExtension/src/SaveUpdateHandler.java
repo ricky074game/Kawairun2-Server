@@ -8,8 +8,13 @@ public class SaveUpdateHandler extends BaseClientRequestHandler {
         trace("SaveUpdate from: " + user.getName());
 
         try {
+            if (!SecurityUtils.isValidUsername(user.getName())) {
+                trace("Blocked SaveUpdate for guest or invalid user: " + user.getName());
+                return;
+            }
+
             byte[] saveData = null;
-            if (params.containsKey("save")) {
+            if (params.containsKey("save") && params.getByteArray("save") != null) {
                 saveData = params.getByteArray("save");
             }
 
@@ -18,6 +23,20 @@ public class SaveUpdateHandler extends BaseClientRequestHandler {
             long totalDistance = params.getLong("TotalDistance");
             long distance = params.getLong("Distance");
             long mtxItems = params.getLong("mtxitems");
+
+            if (!SecurityUtils.isValidSaveData(saveData)) {
+                trace("Blocked SaveUpdate with invalid save payload size for: " + user.getName());
+                return;
+            }
+
+            if (!SecurityUtils.isValidCounterStat(wins) ||
+                !SecurityUtils.isValidCounterStat(lost) ||
+                !SecurityUtils.isValidCounterStat(mtxItems) ||
+                !SecurityUtils.isValidDistanceStat(totalDistance) ||
+                !SecurityUtils.isValidDistanceStat(distance)) {
+                trace("Blocked SaveUpdate with invalid stat values for: " + user.getName());
+                return;
+            }
 
             KawaiRunExtension parentExt = (KawaiRunExtension) getParentExtension();
             DatabaseManager dbManager = parentExt.getDbManager();

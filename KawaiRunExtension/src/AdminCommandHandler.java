@@ -6,6 +6,13 @@ import com.smartfoxserver.v2.extensions.BaseClientRequestHandler;
 public class AdminCommandHandler extends BaseClientRequestHandler {
     @Override
     public void handleClientRequest(User user, ISFSObject params) {
+        KawaiRunExtension parentExt = (KawaiRunExtension) getParentExtension();
+        if (!parentExt.isAdminUser(user)) {
+            trace("Blocked AdminCommand attempt from non-admin user: " + user.getName());
+            sendResponse(user, "Unauthorized");
+            return;
+        }
+
         String command = params.getUtfString("command");
         if (command == null || command.isEmpty()) return;
 

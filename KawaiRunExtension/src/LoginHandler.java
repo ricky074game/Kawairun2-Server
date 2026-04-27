@@ -28,13 +28,23 @@ public class LoginHandler extends BaseServerEventHandler {
         DatabaseManager dbManager = parentExt.getDbManager();
 
         // Check if this is a guest login (empty username/password or guest username)
-        boolean isGuest = userName == null || userName.isEmpty() || userName.toLowerCase().startsWith("guest");
+        boolean isGuest = SecurityUtils.isGuestUser(userName);
 
         if (isGuest) {
             // Allow guest login without database check
             trace("Guest/initial login allowed");
             getApi().login(session, userName, password, zoneName, loginParams);
         } else {
+            if (!SecurityUtils.isValidUsername(userName)) {
+                trace("Rejected login for invalid username format");
+                throw new SFSLoginException("Invalid username or password");
+            }
+
+            if (parentExt.isLoginBlocked(userName)) {
+                trace("Rejected login for rate-limited user: " + userName);
+                throw new SFSLoginException("Too many login attempts. Please try again later.");
+            }
+
             // For registered users, check if they exist in database
             if (dbManager != null && dbManager.isConnected()) {
                 if (dbManager.userExists(userName)) {
@@ -60,6 +70,7 @@ public class LoginHandler extends BaseServerEventHandler {
                         // Verify password
                         if (dbManager.verifyLogin(userName, actualPassword)) {
                             trace("Database authentication successful for: " + userName);
+                            parentExt.clearFailedLoginAttempts(userName);
 
                             // Clear registration tracking BEFORE login to prevent race
                             parentExt.clearRecentRegistration(userName);
@@ -71,29 +82,29 @@ public class LoginHandler extends BaseServerEventHandler {
                             getApi().login(session, userName, password, zoneName, loginParams);
                         } else {
                             trace("!!! Login failed for: " + userName + " - invalid password !!!");
-                            trace("!!! Password verification failed - hash mismatch !!!");
+                            parentExt.recordFailedLoginAttempt(userName);
                             throw new SFSLoginException("Invalid username or password");
                         }
                     } else {
                         // Normal login flow
                         if (dbManager.verifyLogin(userName, actualPassword)) {
                             trace("Database authentication successful for: " + userName);
+                            parentExt.clearFailedLoginAttempts(userName);
                             getApi().login(session, userName, password, zoneName, loginParams);
                         } else {
                             trace("!!! Login failed for: " + userName + " - invalid password !!!");
-                            trace("!!! Password verification failed - hash mismatch !!!");
+                            parentExt.recordFailedLoginAttempt(userName);
                             throw new SFSLoginException("Invalid username or password");
                         }
                     }
                 } else {
-                    // User doesn't exist in database - reject login
-                    trace("!!! Login failed for: " + userName + " - account not found !!!");
-                    throw new SFSLoginException("Account not found. Please create an account first.");
+                    trace("!!! Login failed for: " + userName + " - unknown account !!!");
+                    parentExt.recordFailedLoginAttempt(userName);
+                    throw new SFSLoginException("Invalid username or password");
                 }
             } else {
-                // Database not available - allow login but warn
-                trace("Database not available - allowing login without verification");
-                getApi().login(session, userName, password, zoneName, loginParams);
+                trace("Database not available - rejecting registered login");
+                throw new SFSLoginException("Login service is temporarily unavailable");
             }
         }
     }
