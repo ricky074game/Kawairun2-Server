@@ -2,6 +2,8 @@
 
 This project is a complete reimplementation of the Kawairun 2 game infrastructure, including a custom game launcher, SmartFoxServer extension, and web server to restore functionality of the original Flash-based game.
 
+[Discord Server (Play with us here!)](https://discord.gg/sp3QTrckG5)
+
 Kawairun 2 is a multiplayer Flash game that has been restored through three main components:
 
 1. **KawaiRun2Launcher** - A Windows launcher application that runs the game
