@@ -2,6 +2,8 @@ import com.smartfoxserver.v2.extensions.SFSExtension;
 import java.sql.*;
 
 public class DatabaseManager {
+    private static final int CONNECTION_VALIDATION_TIMEOUT_SECONDS = 2;
+
     private final SFSExtension extension;
     private Connection connection;
 
@@ -25,8 +27,10 @@ public class DatabaseManager {
         }
 
         try {
+            closeSilently();
             Class.forName(dbDriver);
-            connection = DriverManager.getConnection(dbUrl, dbUser, dbPassword);
+            String connectionUrl = buildConnectionUrl(dbUrl);
+            connection = DriverManager.getConnection(connectionUrl, dbUser, dbPassword);
             extension.trace("Database connected");
             return true;
         } catch (ClassNotFoundException e) {
@@ -39,18 +43,32 @@ public class DatabaseManager {
     }
 
     public void disconnect() {
+        closeSilently();
+    }
+
+    public synchronized boolean ensureConnected() {
+        if (hasUsableConnection()) {
+            return true;
+        }
+
+        extension.trace("Database connection unavailable - attempting reconnect");
+        return connect();
+    }
+
+    private synchronized boolean hasUsableConnection() {
         try {
-            if (connection != null && !connection.isClosed()) {
-                connection.close();
-                extension.trace("Database disconnected");
+            if (connection == null || connection.isClosed()) {
+                return false;
             }
+
+            return connection.isValid(CONNECTION_VALIDATION_TIMEOUT_SECONDS);
         } catch (SQLException e) {
-            extension.trace("Error closing database: " + e.getMessage());
+            return false;
         }
     }
 
     public boolean userExists(String username) {
-        if (!isConnected()) {
+        if (!ensureConnected()) {
             return false;
         }
 
@@ -60,13 +78,14 @@ public class DatabaseManager {
             ResultSet rs = stmt.executeQuery();
             return rs.next();
         } catch (SQLException e) {
+            handleConnectionException("checking user existence", e);
             extension.trace("Error checking user existence: " + e.getMessage());
             return false;
         }
     }
 
     public boolean createAccount(String username, String passwordHash, byte[] saveData) {
-        if (!isConnected()) {
+        if (!ensureConnected()) {
             return false;
         }
 
@@ -96,6 +115,7 @@ public class DatabaseManager {
             return true;
         } catch (SQLException e) {
             try { connection.rollback(); } catch (SQLException ex) { extension.trace("Rollback failed: " + ex.getMessage()); }
+            handleConnectionException("creating account", e);
             extension.trace("Error creating account: " + e.getMessage());
             return false;
         } finally {
@@ -104,7 +124,7 @@ public class DatabaseManager {
     }
 
     public boolean verifyLogin(String username, String passwordHash) {
-        if (!isConnected()) {
+        if (!ensureConnected()) {
             return false;
         }
 
@@ -126,13 +146,14 @@ public class DatabaseManager {
             }
             return false;
         } catch (SQLException e) {
+            handleConnectionException("verifying login", e);
             extension.trace("Error verifying login: " + e.getMessage());
             return false;
         }
     }
 
     public byte[] getSaveData(String username) {
-        if (!isConnected()) {
+        if (!ensureConnected()) {
             return null;
         }
 
@@ -145,33 +166,46 @@ public class DatabaseManager {
             if (rs.next()) return rs.getBytes("save_data");
             return null;
         } catch (SQLException e) {
+            handleConnectionException("retrieving save data", e);
             extension.trace("Error retrieving save data: " + e.getMessage());
             return null;
         }
     }
 
     public boolean updateSaveData(String username, byte[] saveData, long wins, long losses, long distance, long totalDistance, long mtxItems) {
-        if (!isConnected()) {
+        if (!ensureConnected()) {
             return false;
         }
 
         String query = "UPDATE player_saves ps " +
                       "JOIN users u ON ps.user_id = u.user_id " +
-                      "SET ps.save_data = ?, ps.matches_won = ?, ps.matches_lost = ?, " +
+                      "SET " +
+                      "ps.daily_matches_won = IF(ps.current_day = CURRENT_DATE(), ps.daily_matches_won, 0) + GREATEST(0, ? - ps.matches_won), " +
+                      "ps.daily_matches_lost = IF(ps.current_day = CURRENT_DATE(), ps.daily_matches_lost, 0) + GREATEST(0, ? - ps.matches_lost), " +
+                      "ps.daily_distance_ran = IF(ps.current_day = CURRENT_DATE(), ps.daily_distance_ran, 0) + GREATEST(0, ? - ps.distance_ran), " +
+                      "ps.daily_high_score = IF(ps.current_day = CURRENT_DATE(), GREATEST(ps.daily_high_score, GREATEST(0, ? - ps.coop_high_score)), GREATEST(0, ? - ps.coop_high_score)), " +
+                      "ps.current_day = CURRENT_DATE(), " +
+                      "ps.save_data = ?, ps.matches_won = ?, ps.matches_lost = ?, " +
                       "ps.distance_ran = ?, ps.coop_high_score = ?, ps.mtx_items_count = ? " +
                       "WHERE u.username = ?";
 
         try (PreparedStatement stmt = connection.prepareStatement(query)) {
-            stmt.setBytes(1, saveData);
-            stmt.setLong(2, wins);
-            stmt.setLong(3, losses);
-            stmt.setLong(4, distance);
+            stmt.setLong(1, wins);
+            stmt.setLong(2, losses);
+            stmt.setLong(3, distance);
+            stmt.setLong(4, totalDistance);
             stmt.setLong(5, totalDistance);
-            stmt.setLong(6, mtxItems);
-            stmt.setString(7, username);
+            stmt.setBytes(6, saveData);
+            stmt.setLong(7, wins);
+            stmt.setLong(8, losses);
+            stmt.setLong(9, distance);
+            stmt.setLong(10, totalDistance);
+            stmt.setLong(11, mtxItems);
+            stmt.setString(12, username);
             int rowsAffected = stmt.executeUpdate();
             return rowsAffected > 0;
         } catch (SQLException e) {
+            handleConnectionException("updating save data", e);
             extension.trace("Error updating save data: " + e.getMessage());
             return false;
         }
@@ -183,6 +217,7 @@ public class DatabaseManager {
             stmt.setString(1, username);
             stmt.executeUpdate();
         } catch (SQLException e) {
+            handleConnectionException("updating last login", e);
             extension.trace("Error updating last login: " + e.getMessage());
         }
     }
@@ -195,12 +230,44 @@ public class DatabaseManager {
             stmt.executeUpdate();
             extension.trace("Upgraded password hash for user: " + username);
         } catch (SQLException e) {
+            handleConnectionException("upgrading password hash", e);
             extension.trace("Error upgrading password hash: " + e.getMessage());
         }
     }
 
     public boolean isConnected() {
-        try { return connection != null && !connection.isClosed(); } catch (SQLException e) { return false; }
+        return ensureConnected();
+    }
+
+    private synchronized void closeSilently() {
+        try {
+            if (connection != null && !connection.isClosed()) {
+                connection.close();
+                extension.trace("Database disconnected");
+            }
+        } catch (SQLException e) {
+            extension.trace("Error closing database: " + e.getMessage());
+        } finally {
+            connection = null;
+        }
+    }
+
+    private void handleConnectionException(String action, SQLException e) {
+        if (isConnectionException(e)) {
+            extension.trace("Database connection lost while " + action + ": " + e.getMessage());
+            closeSilently();
+        }
+    }
+
+    private boolean isConnectionException(SQLException e) {
+        if (e instanceof SQLRecoverableException ||
+            e instanceof SQLTransientConnectionException ||
+            e instanceof SQLNonTransientConnectionException) {
+            return true;
+        }
+
+        String sqlState = e.getSQLState();
+        return sqlState != null && sqlState.startsWith("08");
     }
 
     private String readConfig(String systemProperty, String envVar, String defaultValue) {
@@ -216,5 +283,20 @@ public class DatabaseManager {
 
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private String buildConnectionUrl(String baseUrl) {
+        String normalizedUrl = baseUrl.trim();
+
+        if (normalizedUrl.contains("allowPublicKeyRetrieval=")) {
+            return normalizedUrl;
+        }
+
+        StringBuilder builder = new StringBuilder(normalizedUrl);
+        builder.append(normalizedUrl.contains("?") ? "&" : "?");
+        builder.append("allowPublicKeyRetrieval=true");
+        builder.append("&useSSL=false");
+        builder.append("&serverTimezone=UTC");
+        return builder.toString();
     }
 }
