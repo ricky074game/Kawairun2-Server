@@ -7,13 +7,8 @@ import com.smartfoxserver.v2.entities.variables.SFSRoomVariable;
 import com.smartfoxserver.v2.extensions.BaseClientRequestHandler;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 
 public class AddReadyHandler extends BaseClientRequestHandler {
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-
     @Override
     public void handleClientRequest(User user, ISFSObject params) {
         Room room = user.getLastJoinedRoom();
@@ -35,10 +30,12 @@ public class AddReadyHandler extends BaseClientRequestHandler {
 
         if (readyCount >= room.getUserList().size()) {
             try {
+                trace("All players ready in room " + room.getName() + ". Starting match sync.");
                 Object extension = room.getExtension();
                 if (extension instanceof GameRoomExtension) {
                     GameRoomExtension gameExt = (GameRoomExtension) extension;
                     gameExt.resetGameState();
+                    gameExt.startGameSync(); // Start periodic position broadcasts!
                 }
             } catch (Exception e) {
                 trace("RestartGame error: " + e.getMessage());
@@ -76,20 +73,9 @@ public class AddReadyHandler extends BaseClientRequestHandler {
         List<Double> randoms = new ArrayList<>();
         for (int i = 0; i < 100; i++) randoms.add(Math.random());
 
+        trace("Sending AddReady for room " + room.getName() + " to " + room.getUserList().size() + " players");
         ISFSObject response = new SFSObject();
         response.putDoubleArray("randoms", randoms);
         send("AddReady", response, room.getUserList());
-
-        scheduleInitialMovement(room);
-    }
-
-    private void scheduleInitialMovement(final Room room) {
-        scheduler.schedule(() -> {
-            ISFSObject bgResponse = new SFSObject();
-            bgResponse.putFloat("x", -100.0f);
-            bgResponse.putFloat("speed", 13.0f);
-
-            send("SetNewBackgroundX", bgResponse, room.getUserList());
-        }, 3, TimeUnit.SECONDS);
     }
 }

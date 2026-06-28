@@ -1,6 +1,8 @@
 import com.smartfoxserver.v2.core.SFSEventType;
 import com.smartfoxserver.v2.entities.User;
 import com.smartfoxserver.v2.extensions.SFSExtension;
+import com.smartfoxserver.v2.api.CreateRoomSettings;
+import com.smartfoxserver.v2.entities.Room;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
@@ -20,6 +22,7 @@ public class KawaiRunExtension extends SFSExtension {
     private final ConcurrentHashMap<String, FailedLoginState> failedLoginAttempts = new ConcurrentHashMap<>();
     private final Set<String> adminUsers = ConcurrentHashMap.newKeySet();
     private final Set<String> welcomeCoinsClaimedUsers = ConcurrentHashMap.newKeySet();
+    private final Set<String> mutedUsers = ConcurrentHashMap.newKeySet();
 
     @Override
     public void init() {
@@ -58,7 +61,37 @@ public class KawaiRunExtension extends SFSExtension {
         addRequestHandler("AdminCommand", AdminCommandHandler.class);
 
         addRequestHandler("DONTKICKMEOUT", DontKickMeOutHandler.class);
+        
+        createStaticRoomIfMissing("SignUp");
+        createStaticRoomIfMissing("LoggedIn");
+        createStaticRoomIfMissing("Matchmaking");
+        createStaticRoomIfMissing("The Lobby");
 
+        try {
+            getParentZone().setMaxUserVariablesAllowed(30);
+            trace("Successfully set maximum user variables allowed to 30.");
+        } catch (Exception e) {
+            trace("Error setting max user variables: " + e.getMessage());
+        }
+
+    }
+
+    private void createStaticRoomIfMissing(String roomName) {
+        try {
+            if (getParentZone().getRoomByName(roomName) == null) {
+                CreateRoomSettings settings = new CreateRoomSettings();
+                settings.setName(roomName);
+                settings.setMaxUsers(200);
+                settings.setGroupId("default");
+                settings.setDynamic(false); // Make it static so it stays active
+                getApi().createRoom(getParentZone(), settings, null);
+                trace("Programmatically created static room: " + roomName);
+            } else {
+                trace("Static room already exists: " + roomName);
+            }
+        } catch (Exception e) {
+            trace("Error creating static room '" + roomName + "': " + e.getMessage());
+        }
     }
 
     @Override
@@ -172,6 +205,21 @@ public class KawaiRunExtension extends SFSExtension {
         }
 
         failedLoginAttempts.remove(username.toLowerCase(Locale.ROOT));
+    }
+
+    public boolean muteUser(String username) {
+        if (username == null || username.isEmpty()) return false;
+        return mutedUsers.add(username.toLowerCase(Locale.ROOT));
+    }
+
+    public boolean unmuteUser(String username) {
+        if (username == null || username.isEmpty()) return false;
+        return mutedUsers.remove(username.toLowerCase(Locale.ROOT));
+    }
+
+    public boolean isMuted(String username) {
+        if (username == null || username.isEmpty()) return false;
+        return mutedUsers.contains(username.toLowerCase(Locale.ROOT));
     }
 
     public String giveCoins(String username, int amount) {

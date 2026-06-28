@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <AssemblyName>KawaiRun2Launcher</AssemblyName>
+    <RootNamespace>KawaiRun2Launcher</RootNamespace>
+    <ApplicationIcon>kawairun2icon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="game.swf" LogicalName="game.swf" />
+    <EmbeddedResource Include="launcher_config.json" LogicalName="launcher_config.json" />
+    <EmbeddedResource Include="version.txt" LogicalName="version.txt" />
+    <EmbeddedResource Include="kawairun2icon.ico" LogicalName="kawairun2icon.ico" />
+    <EmbeddedResource Include="flash.exe" LogicalName="flash.exe" Condition="'$(RuntimeIdentifier)' == 'win-x64' or '$(RuntimeIdentifier)' == 'win-x86'" />
+    <EmbeddedResource Include="mac_flash.zip" LogicalName="mac_flash.zip" Condition="'$(RuntimeIdentifier)' == 'osx-x64'" />
+    <EmbeddedResource Include="linux_flash" LogicalName="linux_flash" Condition="'$(RuntimeIdentifier)' == 'linux-x64'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="kawairun2icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

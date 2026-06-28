@@ -1,11 +1,20 @@
 import com.smartfoxserver.v2.entities.User;
 import com.smartfoxserver.v2.entities.data.ISFSObject;
+import com.smartfoxserver.v2.entities.data.SFSObject;
 import com.smartfoxserver.v2.extensions.BaseClientRequestHandler;
 
 public class AuthenticateHandler extends BaseClientRequestHandler {
     @Override
     public void handleClientRequest(User user, ISFSObject params) {
         trace("--- 'Authenticate' request received from user: " + user.getName() + " ---");
+
+        // Re-apply a server-side mute if this user was muted earlier this session.
+        KawaiRunExtension ext = (KawaiRunExtension) getParentExtension();
+        if (ext.isMuted(user.getName())) {
+            ISFSObject muteResponse = new SFSObject();
+            muteResponse.putBool("muted", true);
+            send("AdminMute", muteResponse, user);
+        }
 
         if (params.containsKey("EKey")) {
             trace("Authenticate request included an EKey payload");

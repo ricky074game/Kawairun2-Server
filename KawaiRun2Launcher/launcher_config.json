@@ -1,0 +1,12 @@
+{
+  "updateManifestUrl": "https://kawairun2.puzzlebest.tech/update.txt",
+  "windowTitle": "Kawairun2",
+  "discord": {
+    "enabled": false,
+    "applicationId": "",
+    "details": "Playing Kawairun2",
+    "state": "In launcher",
+    "largeImageKey": "",
+    "largeImageText": "Kawairun2"
+  }
+}

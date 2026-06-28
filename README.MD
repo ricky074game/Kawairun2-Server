@@ -16,23 +16,50 @@ The game is accessible at **kawairun2.puzzlebest.tech**
 
 ## Building the Project
 
-### 1. KawaiRun2Launcher (Windows)
+### 1. KawaiRun2Launcher
 
 **Prerequisites:**
 - .NET 8.0 SDK or later
-- Windows operating system
+- Windows for building with the bundled `build.ps1`
 
 **Build Steps:**
 
 ```powershell
 cd KawaiRun2Launcher
-dotnet publish -c Release -r win-x64 --self-contained true
+.\build.ps1
 ```
 
-The compiled executable will be located at:
+This produces launcher packages for:
+- `win-x86`
+- `win-x64`
+- `osx-x64`
+
+Published folders are written to:
 ```
-KawaiRun2Launcher\bin\Release\net8.0-windows\win-x64\publish\KawaiRun2Launcher.exe
+KawaiRun2Launcher\publish\
 ```
+
+Update ZIPs for the server are written to:
+```
+Server\launcher\
+```
+
+The launcher now:
+- starts the bundled Flash projector with `game.swf`
+- checks `Server/update.txt` for updates before launching
+- auto-installs critical updates and prompts for optional ones
+- renames the Windows Flash window to `KawaiRun 2`
+- supports optional Discord Rich Presence via `launcher_config.json`
+
+**Discord presence setup:**
+- Open `KawaiRun2Launcher\launcher_config.json`
+- Set `discord.enabled` to `true`
+- Fill in `discord.applicationId` with your Discord application client ID
+- Optionally set `largeImageKey` and `largeImageText`
+
+**macOS Flash projector note:**
+- The repository includes the standalone mac projector package used for the `osx-x64` build.
+- Modern macOS versions may still block or refuse older Flash projector builds depending on OS security and architecture support.
 ---
 
 ### 2. KawaiRunExtension (SmartFoxServer)
@@ -160,6 +187,18 @@ Contains the IP address of the SmartFoxServer:
 3.143.25.120
 ```
 
+### update.txt
+Controls launcher updates:
+```txt
+version=1.0.0
+critical=false
+win_x86_url=https://kawairun2.puzzlebest.tech/launcher/win-x86.zip
+win_x64_url=https://kawairun2.puzzlebest.tech/launcher/win-x64.zip
+osx_x64_url=https://kawairun2.puzzlebest.tech/launcher/osx-x64.zip
+```
+
+If `critical=true`, the launcher will force the update and close the game if the update cannot be installed.
+
 ### crossdomain.xml
 Allows Flash to make cross-domain requests:
 ```xml
@@ -175,8 +214,14 @@ Allows Flash to make cross-domain requests:
 ## Troubleshooting
 
 **Launcher doesn't start:**
-- Ensure .NET 8.0 Runtime is installed
-- Check that `flash.exe` and `game.swf` are embedded in the project
+- Check that the platform package includes its Flash projector and `game.swf`
+- On Windows, confirm `flash.exe` is next to `KawaiRun2Launcher.exe`
+- On macOS, confirm `Flash Player.app` is next to the launcher binary
+
+**Launcher won't update:**
+- Verify `Server/update.txt` is reachable
+- Verify the files in `Server/launcher/` match the URLs in `update.txt`
+- Critical updates intentionally stop the game when download or install fails
 
 **Can't connect to server:**
 - Verify SmartFoxServer is running

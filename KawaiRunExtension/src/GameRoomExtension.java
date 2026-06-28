@@ -8,10 +8,17 @@ import com.smartfoxserver.v2.entities.variables.UserVariable;
 import com.smartfoxserver.v2.extensions.SFSExtension;
 import java.util.*;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
 public class GameRoomExtension extends SFSExtension {
     private final Map<String, Boolean> playerDeadStatus = new HashMap<>();
     private float currentSpeed = 20f;
     private boolean gameEnded = false;
+    private ScheduledExecutorService syncScheduler;
+    private float currentX = 0f;
+    private float startupSpeedTarget = 8.0f;
     // Track the last sent order so server knows teams like the client (indices 0-1 vs 2-3)
     private List<String> userOrder = new ArrayList<>();
 
@@ -36,8 +43,50 @@ public class GameRoomExtension extends SFSExtension {
 
     @Override
     public void destroy() {
+        if (syncScheduler != null) {
+            syncScheduler.shutdownNow();
+        }
         trace("GameRoomExtension stopped for: " + getParentRoom().getName());
         super.destroy();
+    }
+
+    public void startGameSync() {
+        if (syncScheduler != null) {
+            syncScheduler.shutdownNow();
+        }
+        syncScheduler = Executors.newScheduledThreadPool(1);
+        currentX = 0.0f;
+        currentSpeed = 0.0f;
+        trace("Starting background sync for room " + getParentRoom().getName() + " at x=" + currentX + ", speed=" + currentSpeed);
+
+        syncScheduler.scheduleAtFixedRate(() -> {
+            try {
+                if (gameEnded) {
+                    syncScheduler.shutdown();
+                    return;
+                }
+\
+                float elapsedTicks = 2.25f;
+                if (currentSpeed < startupSpeedTarget) {
+                    currentSpeed = Math.min(startupSpeedTarget, currentSpeed + 0.2f);
+                }
+                currentX += currentSpeed * elapsedTicks;
+
+                int completedBGs = (int)(currentX / 1500f);
+                if (currentSpeed >= startupSpeedTarget) {
+                    currentSpeed = Math.min(30.0f, startupSpeedTarget + completedBGs * 0.15f);
+                }
+
+                ISFSObject bgResponse = new SFSObject();
+                bgResponse.putFloat("x", -currentX);
+                bgResponse.putFloat("speed", currentSpeed);
+                bgResponse.putLong("serverTime", System.currentTimeMillis());
+
+                send("SetNewBackgroundX", bgResponse, getParentRoom().getUserList());
+            } catch (Exception e) {
+                trace("Error in startGameSync broadcast: " + e.getMessage());
+            }
+        }, 0, 50, TimeUnit.MILLISECONDS);
     }
 
     public void resetGameState() {

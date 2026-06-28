@@ -211,6 +211,24 @@ public class DatabaseManager {
         }
     }
 
+    public boolean setUserActive(String username, boolean active) {
+        if (!ensureConnected()) {
+            return false;
+        }
+
+        String query = "UPDATE users SET is_active = ? WHERE username = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setBoolean(1, active);
+            stmt.setString(2, username);
+            int rowsAffected = stmt.executeUpdate();
+            return rowsAffected > 0;
+        } catch (SQLException e) {
+            handleConnectionException("updating user active flag", e);
+            extension.trace("Error updating user active flag: " + e.getMessage());
+            return false;
+        }
+    }
+
     private void updateLastLogin(String username) {
         String query = "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE username = ?";
         try (PreparedStatement stmt = connection.prepareStatement(query)) {

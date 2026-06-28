@@ -4,3 +4,15 @@ KawairunExtension/extracted_scripts/
 KawairunExtension/.tools
 KawairunExtension/out2
 KawaiRun2Launcher/.vs
+KawaiRun2Launcher/bin/
+KawaiRun2Launcher/obj/
+KawaiRun2Launcher/publish/
+KawaiRun2Launcher/mac_flash.zip
+KawaiRun2Launcher/mac_flash/
+KawaiRun2Launcher/linux_flash
+KawaiRun2Launcher/kawairun2icon.ico
+KawaiRun2Launcher/build.ps1
+Server/
+extracted_scripts/
+compile_game.ps1
+setup_and_run_local.ps1
