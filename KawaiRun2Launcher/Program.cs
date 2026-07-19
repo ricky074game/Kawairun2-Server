@@ -13,7 +13,7 @@ namespace KawaiRun2Launcher;
 
 internal static class Program
 {
-    private const string DefaultVersion = "1.3.0";
+    private const string DefaultVersion = "1.3.1";
     private const string VersionFileName = "version.txt";
     private const string ConfigFileName = "launcher_config.json";
 
@@ -188,6 +188,52 @@ internal static class Program
         return client;
     }
 
+    private static async Task DownloadPackageAsync(string packageUrl, string destinationPath)
+    {
+        using HttpClient client = new()
+        {
+            Timeout = Timeout.InfiniteTimeSpan
+        };
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("KawaiRun2Launcher", DefaultVersion));
+
+        using CancellationTokenSource overallCts = new();
+        overallCts.CancelAfter(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            using HttpResponseMessage response = await client.GetAsync(packageUrl, HttpCompletionOption.ResponseHeadersRead, overallCts.Token);
+            response.EnsureSuccessStatusCode();
+
+            overallCts.CancelAfter(TimeSpan.FromMinutes(30));
+
+            await using Stream input = await response.Content.ReadAsStreamAsync(overallCts.Token);
+            await using FileStream output = File.Create(destinationPath);
+            byte[] buffer = new byte[1 << 16];
+            while (true)
+            {
+                int read;
+                using (CancellationTokenSource readCts = CancellationTokenSource.CreateLinkedTokenSource(overallCts.Token))
+                {
+                    readCts.CancelAfter(TimeSpan.FromSeconds(60));
+                    read = await input.ReadAsync(buffer, readCts.Token);
+                }
+
+                if (read == 0)
+                {
+                    break;
+                }
+
+                await output.WriteAsync(buffer.AsMemory(0, read), overallCts.Token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException(
+                "The download timed out because the connection was too slow or was interrupted. " +
+                "Please check your internet connection and try again, or download the latest launcher manually from https://kawairun2.puzzlebest.tech.");
+        }
+    }
+
     private static async Task<UpdateManifest?> TryFetchUpdateManifestAsync(string manifestUrl)
     {
         try
@@ -215,13 +261,7 @@ internal static class Program
 
         try
         {
-            using HttpResponseMessage response = await HttpClient.GetAsync(packageUrl);
-            response.EnsureSuccessStatusCode();
-
-            await using (FileStream output = File.Create(packageZip))
-            {
-                await response.Content.CopyToAsync(output);
-            }
+            await DownloadPackageAsync(packageUrl, packageZip);
 
             ZipFile.ExtractToDirectory(packageZip, extractedDir, overwriteFiles: true);
         }
