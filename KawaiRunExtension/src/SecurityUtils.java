@@ -28,6 +28,7 @@ public final class SecurityUtils {
     private static final int HASH_LENGTH_BYTES = 32;
     private static final boolean ALLOW_LEGACY_HASH_LOGIN = readBooleanConfig("kawairun.auth.allowLegacyHashLogin", "KAWAIRUN_ALLOW_LEGACY_HASH_LOGIN", false);
     private static final boolean ALLOW_LEGACY_STORED_HASHES = readBooleanConfig("kawairun.auth.allowLegacyStoredHashes", "KAWAIRUN_ALLOW_LEGACY_STORED_HASHES", true);
+    private static final String MIN_CLIENT_VERSION = readConfig("kawairun.client.minVersion", "KAWAIRUN_MIN_CLIENT_VERSION", "1.3.0");
     private static final byte[] PASSWORD_PEPPER = readSecretBytes("kawairun.password.pepper", "KAWAIRUN_PASSWORD_PEPPER");
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final Base64.Encoder BASE64_ENCODER = Base64.getUrlEncoder().withoutPadding();
@@ -402,6 +403,40 @@ public final class SecurityUtils {
         }
 
         return Collections.unmodifiableSet(blocked);
+    }
+
+    public static boolean isClientVersionAllowed(String version) {
+        String minVersion = MIN_CLIENT_VERSION;
+        if (minVersion == null || minVersion.trim().isEmpty() || "off".equalsIgnoreCase(minVersion.trim())) {
+            return true;
+        }
+        if (version == null || version.trim().isEmpty()) {
+            return false;
+        }
+        return compareVersions(version.trim(), minVersion.trim()) >= 0;
+    }
+
+    private static int compareVersions(String a, String b) {
+        String[] partsA = a.split("\\.");
+        String[] partsB = b.split("\\.");
+        int len = Math.max(partsA.length, partsB.length);
+        for (int i = 0; i < len; i++) {
+            int numA = i < partsA.length ? parseVersionPart(partsA[i]) : 0;
+            int numB = i < partsB.length ? parseVersionPart(partsB[i]) : 0;
+            if (numA != numB) {
+                return numA < numB ? -1 : 1;
+            }
+        }
+        return 0;
+    }
+
+    private static int parseVersionPart(String part) {
+        try {
+            return Integer.parseInt(part.trim());
+        } catch (NumberFormatException e) {
+            // Garbage in a version segment sorts below any real number -> fails the gate.
+            return -1;
+        }
     }
 
     private static byte[] readSecretBytes(String systemProperty, String envVar) {

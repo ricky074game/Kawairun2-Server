@@ -18,6 +18,15 @@ public class LoginHandler extends BaseServerEventHandler {
 
         trace("Login attempt for user: " + userName + " in Zone: " + zoneName);
 
+        String clientVersion = null;
+        if (loginParams != null && loginParams.containsKey("CVer")) {
+            clientVersion = loginParams.getUtfString("CVer");
+        }
+        if (!SecurityUtils.isClientVersionAllowed(clientVersion)) {
+            trace("Rejected login from outdated client (CVer=" + clientVersion + ") for user: " + userName);
+            throw new SFSLoginException("Your game is out of date. Restart the launcher (or refresh the website) to update.");
+        }
+
         // Check if credentials are in loginParams (EPass field)
         String ePass = null;
         if (loginParams != null && loginParams.containsKey("EPass")) {
