@@ -86,6 +86,9 @@ public class LoginHandler extends BaseServerEventHandler {
                             getApi().login(session, userName, password, zoneName, loginParams);
                         } else {
                             trace("!!! Login failed for: " + userName + " - invalid password !!!");
+                            // Drop the cached plaintext registration password right away on a
+                            // failed auto-login so it does not linger in server memory.
+                            parentExt.clearRecentRegistration(userName);
                             parentExt.recordFailedLoginAttempt(userName);
                             throw new SFSLoginException("Invalid username or password");
                         }
@@ -103,6 +106,9 @@ public class LoginHandler extends BaseServerEventHandler {
                     }
                 } else {
                     trace("!!! Login failed for: " + userName + " - unknown account !!!");
+                    // Spend the same Argon2 time a real password check costs, so login latency
+                    // cannot be used to tell registered usernames from unregistered ones.
+                    SecurityUtils.dummyVerify(ePass != null ? ePass : password);
                     parentExt.recordFailedLoginAttempt(userName);
                     throw new SFSLoginException("Invalid username or password");
                 }

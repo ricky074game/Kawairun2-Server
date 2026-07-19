@@ -65,7 +65,7 @@ public class GameRoomExtension extends SFSExtension {
                     syncScheduler.shutdown();
                     return;
                 }
-\
+
                 float elapsedTicks = 2.25f;
                 if (currentSpeed < startupSpeedTarget) {
                     currentSpeed = Math.min(startupSpeedTarget, currentSpeed + 0.2f);

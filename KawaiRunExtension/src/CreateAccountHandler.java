@@ -19,6 +19,15 @@ public class CreateAccountHandler extends BaseClientRequestHandler {
                 return;
             }
 
+            KawaiRunExtension parentExt = (KawaiRunExtension) getParentExtension();
+
+            if (!parentExt.tryAcquireAccountCreation(user.getSession().getAddress())) {
+                trace("Account creation rate-limited for: " + user.getSession().getAddress());
+                ISFSObject response = new SFSObject();
+                send("DatabaseError", response, user);
+                return;
+            }
+
             String passwordHash = SecurityUtils.hashPasswordForStorage(plainPassword);
             if (passwordHash == null) {
                 ISFSObject response = new SFSObject();
@@ -38,7 +47,6 @@ public class CreateAccountHandler extends BaseClientRequestHandler {
                 return;
             }
 
-            KawaiRunExtension parentExt = (KawaiRunExtension) getParentExtension();
             DatabaseManager dbManager = parentExt.getDbManager();
 
             if (dbManager != null && dbManager.isConnected()) {

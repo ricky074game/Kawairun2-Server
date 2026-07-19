@@ -34,6 +34,8 @@ public final class SecurityUtils {
     private static final Base64.Decoder BASE64_DECODER = Base64.getUrlDecoder();
     private static final Set<String> BLOCKED_PASSWORDS = loadBlockedPasswords();
 
+    private static final String TIMING_DUMMY_HASH = createPasswordHash("timing-equalizer-not-a-real-secret");
+
     private static final int MIN_PASSWORD_LENGTH = 3;
     private static final int MAX_PASSWORD_LENGTH = 128;
     private static final int MAX_SAVE_SIZE_BYTES = 1024 * 1024;
@@ -43,7 +45,111 @@ public final class SecurityUtils {
     // Kept only to verify and migrate existing accounts.
     private static final String LEGACY_PASSWORD_SALT = "JEDDAHBIKERSSALT2259GIYU2137";
 
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,24}$");
+    private static final int MAX_EMAIL_LENGTH = 190;
+    public static final int EMAIL_CODE_LENGTH = 8;
+
     private SecurityUtils() {
+    }
+
+    public static String normalizeEmail(String email) {
+        if (email == null) {
+            return null;
+        }
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    public static boolean isValidEmail(String email) {
+        if (email == null || email.isEmpty() || email.length() > MAX_EMAIL_LENGTH) {
+            return false;
+        }
+
+        for (int i = 0; i < email.length(); i++) {
+            char c = email.charAt(i);
+            if (Character.isISOControl(c) || Character.isWhitespace(c)) {
+                return false;
+            }
+        }
+
+        if (email.contains("..")) {
+            return false;
+        }
+
+        return EMAIL_PATTERN.matcher(email).matches();
+    }
+
+    public static String generateEmailCode() {
+        StringBuilder code = new StringBuilder(EMAIL_CODE_LENGTH);
+        for (int i = 0; i < EMAIL_CODE_LENGTH; i++) {
+            code.append(SECURE_RANDOM.nextInt(10));
+        }
+        return code.toString();
+    }
+
+    public static boolean isValidEmailCodeFormat(String code) {
+        if (code == null || code.length() != EMAIL_CODE_LENGTH) {
+            return false;
+        }
+        for (int i = 0; i < code.length(); i++) {
+            char c = code.charAt(i);
+            if (c < '0' || c > '9') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static String generateCodeSalt() {
+        byte[] salt = new byte[SALT_LENGTH_BYTES];
+        SECURE_RANDOM.nextBytes(salt);
+        return BASE64_ENCODER.encodeToString(salt);
+    }
+
+    public static String hashEmailCode(String salt, String code) {
+        if (salt == null || code == null) {
+            return null;
+        }
+        byte[] hash = generateArgon2Hash(code.toCharArray(), salt.getBytes(StandardCharsets.UTF_8),
+            ARGON2_MEMORY_KB, ARGON2_ITERATIONS, ARGON2_PARALLELISM, HASH_LENGTH_BYTES);
+        if (hash == null) {
+            return null;
+        }
+        return BASE64_ENCODER.encodeToString(hash);
+    }
+
+    public static boolean matchesEmailCode(String salt, String providedCode, String storedHash) {
+        String providedHash = hashEmailCode(salt, providedCode);
+        if (providedHash == null || storedHash == null) {
+            return false;
+        }
+        return constantTimeEquals(providedHash, storedHash);
+    }
+
+    public static String maskEmail(String email) {
+        if (email == null || email.isEmpty()) {
+            return "";
+        }
+
+        int at = email.indexOf('@');
+        if (at <= 0) {
+            return "***";
+        }
+
+        String local = email.substring(0, at);
+        String domain = email.substring(at + 1);
+        String maskedLocal = local.length() <= 2
+            ? local.charAt(0) + "***"
+            : local.substring(0, 2) + "***";
+
+        int lastDot = domain.lastIndexOf('.');
+        String maskedDomain;
+        if (lastDot > 1) {
+            maskedDomain = domain.charAt(0) + "***" + domain.substring(lastDot);
+        } else {
+            maskedDomain = domain.charAt(0) + "***";
+        }
+
+        return maskedLocal + "@" + maskedDomain;
     }
 
     public static boolean isGuestUser(String username) {
@@ -123,6 +229,12 @@ public final class SecurityUtils {
 
     public static boolean matchesStoredPassword(String providedSecret, String storedHash) {
         return verifyPassword(providedSecret, storedHash).isMatched();
+    }
+    public static void dummyVerify(String providedSecret) {
+        if (TIMING_DUMMY_HASH == null) {
+            return;
+        }
+        verifyPassword(providedSecret == null ? "" : providedSecret, TIMING_DUMMY_HASH);
     }
 
     public static PasswordCheckResult verifyPassword(String providedSecret, String storedHash) {

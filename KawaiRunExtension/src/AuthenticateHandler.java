@@ -33,6 +33,13 @@ public class AuthenticateHandler extends BaseClientRequestHandler {
         if (dbManager != null && dbManager.isConnected()) {
             if (dbManager.userExists(username)) {
                 trace("--- User " + username + " verified in database (existing account) ---");
+
+                DatabaseManager.EmailInfo emailInfo = dbManager.getEmailInfo(username);
+                ISFSObject emailStatus = new SFSObject();
+                boolean verified = emailInfo != null && emailInfo.verified;
+                emailStatus.putBool("verified", verified);
+                emailStatus.putUtfString("masked", verified ? SecurityUtils.maskEmail(emailInfo.email) : "");
+                send("EmailStatus", emailStatus, user);
             } else {
                 trace("--- User " + username + " could not be verified in database ---");
             }

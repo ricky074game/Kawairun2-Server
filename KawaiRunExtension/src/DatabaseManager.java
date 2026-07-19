@@ -253,8 +253,250 @@ public class DatabaseManager {
         }
     }
 
+    public Integer getUserId(String username) {
+        if (!ensureConnected()) {
+            return null;
+        }
+
+        String query = "SELECT user_id FROM users WHERE username = ? AND is_active = TRUE";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt("user_id");
+            }
+            return null;
+        } catch (SQLException e) {
+            handleConnectionException("looking up user id", e);
+            extension.trace("Error looking up user id: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public EmailInfo getEmailInfo(String username) {
+        if (!ensureConnected()) {
+            return null;
+        }
+
+        String query = "SELECT email, email_verified FROM users WHERE username = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return new EmailInfo(rs.getString("email"), rs.getBoolean("email_verified"));
+            }
+            return null;
+        } catch (SQLException e) {
+            handleConnectionException("reading email status", e);
+            extension.trace("Error reading email status: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public String getUsernameByVerifiedEmail(String email) {
+        if (!ensureConnected()) {
+            return null;
+        }
+
+        String query = "SELECT username FROM users WHERE email = ? AND email_verified = TRUE AND is_active = TRUE";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setString(1, email);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return rs.getString("username");
+            }
+            return null;
+        } catch (SQLException e) {
+            handleConnectionException("looking up email owner", e);
+            extension.trace("Error looking up email owner: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public boolean storeEmailCode(int userId, String purpose, String email, String salt, String hash, int expiryMinutes) {
+        if (!ensureConnected()) {
+            return false;
+        }
+
+        String query = "INSERT INTO email_codes (user_id, purpose, email, code_salt, code_hash, attempts, expires_at) " +
+                       "VALUES (?, ?, ?, ?, ?, 0, DATE_ADD(NOW(), INTERVAL ? MINUTE)) " +
+                       "ON DUPLICATE KEY UPDATE email = VALUES(email), code_salt = VALUES(code_salt), " +
+                       "code_hash = VALUES(code_hash), attempts = 0, expires_at = VALUES(expires_at), created_at = NOW()";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, userId);
+            stmt.setString(2, purpose);
+            stmt.setString(3, email);
+            stmt.setString(4, salt);
+            stmt.setString(5, hash);
+            stmt.setInt(6, expiryMinutes);
+            stmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            handleConnectionException("storing email code", e);
+            extension.trace("Error storing email code: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public EmailCodeRow getEmailCode(int userId, String purpose) {
+        if (!ensureConnected()) {
+            return null;
+        }
+
+        String query = "SELECT email, code_salt, code_hash, attempts, (expires_at < NOW()) AS expired " +
+                       "FROM email_codes WHERE user_id = ? AND purpose = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, userId);
+            stmt.setString(2, purpose);
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return new EmailCodeRow(
+                    rs.getString("email"),
+                    rs.getString("code_salt"),
+                    rs.getString("code_hash"),
+                    rs.getInt("attempts"),
+                    rs.getBoolean("expired")
+                );
+            }
+            return null;
+        } catch (SQLException e) {
+            handleConnectionException("reading email code", e);
+            extension.trace("Error reading email code: " + e.getMessage());
+            return null;
+        }
+    }
+
+    public boolean incrementEmailCodeAttempts(int userId, String purpose) {
+        if (!ensureConnected()) {
+            return false;
+        }
+
+        String query = "UPDATE email_codes SET attempts = attempts + 1 WHERE user_id = ? AND purpose = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, userId);
+            stmt.setString(2, purpose);
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            handleConnectionException("incrementing code attempts", e);
+            extension.trace("Error incrementing code attempts: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public boolean tryConsumeEmailCodeAttempt(int userId, String purpose, int maxAttempts) {
+        if (!ensureConnected()) {
+            return false;
+        }
+
+        String query = "UPDATE email_codes SET attempts = attempts + 1 " +
+                       "WHERE user_id = ? AND purpose = ? AND attempts < ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, userId);
+            stmt.setString(2, purpose);
+            stmt.setInt(3, maxAttempts);
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            handleConnectionException("consuming code attempt", e);
+            extension.trace("Error consuming code attempt: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public void pingTiming() {
+        if (!ensureConnected()) {
+            return;
+        }
+        try (PreparedStatement stmt = connection.prepareStatement("SELECT 1")) {
+            stmt.executeQuery().close();
+            stmt.executeQuery().close();
+        } catch (SQLException e) {
+            handleConnectionException("timing ping", e);
+        }
+    }
+
+    public void deleteEmailCode(int userId, String purpose) {
+        if (!ensureConnected()) {
+            return;
+        }
+
+        String query = "DELETE FROM email_codes WHERE user_id = ? AND purpose = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setInt(1, userId);
+            stmt.setString(2, purpose);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            handleConnectionException("deleting email code", e);
+            extension.trace("Error deleting email code: " + e.getMessage());
+        }
+    }
+
+    public int setVerifiedEmail(int userId, String email) {
+        if (!ensureConnected()) {
+            return 0;
+        }
+
+        String query = "UPDATE users SET email = ?, email_verified = TRUE WHERE user_id = ?";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setString(1, email);
+            stmt.setInt(2, userId);
+            return stmt.executeUpdate() > 0 ? 1 : 0;
+        } catch (SQLIntegrityConstraintViolationException e) {
+            return -1;
+        } catch (SQLException e) {
+            if ("23000".equals(e.getSQLState())) {
+                return -1;
+            }
+            handleConnectionException("setting verified email", e);
+            extension.trace("Error setting verified email: " + e.getMessage());
+            return 0;
+        }
+    }
+
+    public boolean updatePasswordForUser(String username, String passwordHash) {
+        if (!ensureConnected()) {
+            return false;
+        }
+
+        String query = "UPDATE users SET password_hash = ?, password_updated_at = CURRENT_TIMESTAMP WHERE username = ? AND is_active = TRUE";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setString(1, passwordHash);
+            stmt.setString(2, username);
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            handleConnectionException("resetting password", e);
+            extension.trace("Error resetting password: " + e.getMessage());
+            return false;
+        }
+    }
+
     public boolean isConnected() {
         return ensureConnected();
+    }
+
+    public static final class EmailInfo {
+        public final String email;
+        public final boolean verified;
+
+        private EmailInfo(String email, boolean verified) {
+            this.email = email;
+            this.verified = verified;
+        }
+    }
+
+    public static final class EmailCodeRow {
+        public final String email;
+        public final String salt;
+        public final String hash;
+        public final int attempts;
+        public final boolean expired;
+
+        private EmailCodeRow(String email, String salt, String hash, int attempts, boolean expired) {
+            this.email = email;
+            this.salt = salt;
+            this.hash = hash;
+            this.attempts = attempts;
+            this.expired = expired;
+        }
     }
 
     private synchronized void closeSilently() {
