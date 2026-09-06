@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net8.0;net8.0-windows</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -14,9 +14,16 @@
     <RootNamespace>KawaiRun2Launcher</RootNamespace>
     <ApplicationIcon>kawairun2icon.ico</ApplicationIcon>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)'=='net8.0-windows'">
+    <UseWindowsForms>true</UseWindowsForms>
+    <DefineConstants>$(DefineConstants);HAS_CONTROLLER</DefineConstants>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Controller/**" Condition="'$(TargetFramework)'=='net8.0'" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,6 +34,13 @@
     <EmbeddedResource Include="flash.exe" LogicalName="flash.exe" Condition="'$(RuntimeIdentifier)' == 'win-x64' or '$(RuntimeIdentifier)' == 'win-x86'" />
     <EmbeddedResource Include="mac_flash.zip" LogicalName="mac_flash.zip" Condition="'$(RuntimeIdentifier)' == 'osx-x64'" />
     <EmbeddedResource Include="linux_flash" LogicalName="linux_flash" Condition="'$(RuntimeIdentifier)' == 'linux-x64'" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)'=='net8.0-windows'">
+    <EmbeddedResource Include="Controller/gamepad-bridge.ps1" LogicalName="gamepad-bridge.ps1" />
+    <EmbeddedResource Include="Controller/x360/xboxControllerTop.png" LogicalName="x360/xboxControllerTop.png" />
+    <EmbeddedResource Include="Controller/x360/xboxControllerFront.png" LogicalName="x360/xboxControllerFront.png" />
+    <EmbeddedResource Include="Controller/x360/ATTRIBUTION.txt" LogicalName="x360/ATTRIBUTION.txt" />
+    <EmbeddedResource Include="Controller/x360/LICENSE.txt" LogicalName="x360/LICENSE.txt" />
   </ItemGroup>
 
   <ItemGroup>

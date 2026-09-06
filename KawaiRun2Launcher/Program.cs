@@ -8,12 +8,15 @@ using System.Text;
 using System.Text.Json;
 using System.Reflection;
 using DiscordRPC;
+#if HAS_CONTROLLER
+using KawaiRun2Launcher.Controller;
+#endif
 
 namespace KawaiRun2Launcher;
 
 internal static class Program
 {
-    private const string DefaultVersion = "1.3.1";
+    private const string DefaultVersion = "1.4.0";
     private const string VersionFileName = "version.txt";
     private const string ConfigFileName = "launcher_config.json";
 
@@ -83,9 +86,30 @@ internal static class Program
                 _ = Task.Run(() => FlashWindowCustomizer.TryRenameAndSetIconAsync(gameProcess.Id, config.WindowTitle, iconPath));
             }
 
-            discord?.SetState("Playing KawaiRun 2");
-            await gameProcess.WaitForExitAsync();
-            return gameProcess.ExitCode;
+#if HAS_CONTROLLER
+            ControllerService? controllerService = null;
+#endif
+            try
+            {
+#if HAS_CONTROLLER
+                if (OperatingSystem.IsWindows())
+                {
+                    controllerService = new ControllerService(tempDir);
+                    controllerService.Start(gameProcess);
+                }
+#endif
+
+                discord?.SetState("Playing KawaiRun 2");
+                await gameProcess.WaitForExitAsync();
+
+                return gameProcess.ExitCode;
+            }
+            finally
+            {
+#if HAS_CONTROLLER
+                controllerService?.Stop();
+#endif
+            }
         }
         catch (LauncherException ex)
         {
@@ -721,7 +745,7 @@ internal static class FlashWindowCustomizer
         }
     }
 
-    private static IntPtr FindMainWindow(int processId)
+    internal static IntPtr FindMainWindow(int processId)
     {
         IntPtr found = IntPtr.Zero;
         EnumWindows((hWnd, _) =>

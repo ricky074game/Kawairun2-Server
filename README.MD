@@ -50,6 +50,7 @@ The launcher now:
 - auto-installs critical updates and prompts for optional ones
 - renames the Windows Flash window to `KawaiRun 2`
 - supports optional Discord Rich Presence via `launcher_config.json`
+- fully supports controllers
 
 **Discord presence setup:**
 - Open `KawaiRun2Launcher\launcher_config.json`

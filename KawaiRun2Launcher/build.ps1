@@ -1,4 +1,14 @@
+param([switch]$NoSign)
 $ErrorActionPreference = "Stop"
+
+$signScript = Join-Path $env:USERPROFILE "tools\ArtifactSigning\sign.ps1"
+$canSign = (-not $NoSign) -and (Test-Path $signScript)
+if (-not $canSign) { Write-Warning "Code signing skipped (use Azure Artifact Signing: $signScript missing or -NoSign)." }
+function Sign-Files([string[]]$paths) {
+    if (-not $canSign) { return }
+    Write-Host "Signing $($paths.Count) file(s) with Azure Artifact Signing..." -ForegroundColor Cyan
+    & $signScript -Files $paths
+}
 
 $launchDir = $PSScriptRoot
 $publishRoot = Join-Path $launchDir "publish"
@@ -51,6 +61,11 @@ if (-not (Test-Path "$launchDir\linux_flash")) {
     }
 }
 
+if ($canSign) {
+    $flashSig = Get-AuthenticodeSignature "$launchDir\flash.exe"
+    if ($flashSig.Status -ne 'Valid') { Sign-Files @("$launchDir\flash.exe") }
+}
+
 Write-Host "Cleaning output folders..." -ForegroundColor Cyan
 if (Test-Path $publishRoot) { Remove-Item -Recurse -Force $publishRoot -ErrorAction SilentlyContinue }
 if (-not (Test-Path $publishRoot)) { New-Item -ItemType Directory -Path $publishRoot | Out-Null }
@@ -60,14 +75,22 @@ foreach ($rid in $rids) {
     $ridDir = Join-Path $publishRoot $rid
     $zipPath = Join-Path $serverLauncherDir "$rid.zip"
 
-    Write-Host "Publishing $rid..." -ForegroundColor Cyan
-    dotnet publish $projectFile -c Release -r $rid -o $ridDir /p:DebugType=None
+    # Controller support only exists on the net8.0-windows TFM (WinForms UI + pad reading/
+    # injection); win-* RIDs publish that target, osx/linux keep publishing plain net8.0 unchanged.
+    $framework = if ($rid -like 'win-*') { 'net8.0-windows' } else { 'net8.0' }
+
+    Write-Host "Publishing $rid ($framework)..." -ForegroundColor Cyan
+    dotnet publish $projectFile -c Release -f $framework -r $rid -o $ridDir /p:DebugType=None
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet publish failed for $rid"
     }
 
     # Clean up non-executables
     Get-ChildItem $ridDir | Where-Object { $_.Name -notmatch '^KawaiRun2Launcher(\.exe)?$' } | Remove-Item -Recurse -Force
+
+    if ($rid -like 'win-*') {
+        Sign-Files @((Join-Path $ridDir "KawaiRun2Launcher.exe"))
+    }
 
     if (Test-Path $zipPath) {
         Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
