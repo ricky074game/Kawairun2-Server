@@ -47,7 +47,17 @@ internal sealed class TrayContext : ApplicationContext, IControllerUi
         _hidden = new HiddenMessageForm();
         _hidden.HotkeyPressed += () => OpenConfigOnUiThread();
         IntPtr handle = _hidden.Handle;
-        Native.RegisterHotKey(handle, HOTKEY_ID, Native.MOD_CONTROL | Native.MOD_ALT, VK_G);
+        if (!Native.RegisterHotKey(handle, HOTKEY_ID, Native.MOD_CONTROL | Native.MOD_ALT, VK_G))
+        {
+            // The hotkey may still be held briefly by a previous instance; give it a moment and
+            // try once more. The tray menu stays available
+            // either way.
+            Thread.Sleep(250);
+            if (!Native.RegisterHotKey(handle, HOTKEY_ID, Native.MOD_CONTROL | Native.MOD_ALT, VK_G))
+            {
+                System.Diagnostics.Debug.WriteLine("[controller] could not register the Ctrl+Alt+G hotkey");
+            }
+        }
 
         _oskForm = new OskForm(service);
         _ = _oskForm.Handle;
@@ -106,7 +116,14 @@ internal sealed class TrayContext : ApplicationContext, IControllerUi
         }
         try
         {
-            hidden.BeginInvoke(new Action(ExitThread));
+            // Release the global hotkey first, on the UI thread that registered it, so
+            // Ctrl+Alt+G can be re-registered immediately instead of racing the rest of this
+            // thread's teardown.
+            hidden.BeginInvoke(new Action(() =>
+            {
+                try { Native.UnregisterHotKey(hidden.Handle, HOTKEY_ID); } catch { }
+                ExitThread();
+            }));
         }
         catch (ObjectDisposedException)
         {
@@ -144,6 +161,9 @@ internal sealed class TrayContext : ApplicationContext, IControllerUi
         ToolStripMenuItem configureItem = new("Configure Controller…");
         configureItem.Click += (_, _) => OpenConfigOnUiThread();
 
+        ToolStripMenuItem skinMakerItem = new("Skin Maker…");
+        skinMakerItem.Click += (_, _) => ExternalLinks.TryOpen(ExternalLinks.SkinMakerUrl);
+
         ToolStripMenuItem enableItem = new("Enable controller support") { CheckOnClick = false };
         enableItem.Click += (_, _) =>
         {
@@ -160,6 +180,7 @@ internal sealed class TrayContext : ApplicationContext, IControllerUi
         exitItem.Click += (_, _) => ExitGame();
 
         menu.Items.Add(configureItem);
+        menu.Items.Add(skinMakerItem);
         menu.Items.Add(enableItem);
         menu.Items.Add(oskItem);
         menu.Items.Add(new ToolStripSeparator());

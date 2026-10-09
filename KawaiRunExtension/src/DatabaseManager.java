@@ -42,6 +42,18 @@ public class DatabaseManager {
         }
     }
 
+    public Connection openDedicatedConnection() throws SQLException {
+        if (isBlank(dbUrl) || isBlank(dbUser) || isBlank(dbPassword)) {
+            throw new SQLException("Database configuration missing");
+        }
+        try {
+            Class.forName(dbDriver);
+        } catch (ClassNotFoundException e) {
+            throw new SQLException("MySQL JDBC Driver not found: " + e.getMessage());
+        }
+        return DriverManager.getConnection(buildConnectionUrl(dbUrl), dbUser, dbPassword);
+    }
+
     public void disconnect() {
         closeSilently();
     }

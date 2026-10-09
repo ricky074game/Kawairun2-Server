@@ -17,3 +17,4 @@ extracted_scripts/
 compile_game.ps1
 setup_and_run_local.ps1
 webrewrite/
+extracted_scripts_hax/

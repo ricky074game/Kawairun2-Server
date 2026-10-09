@@ -88,6 +88,12 @@ public class KawaiRunExtension extends SFSExtension {
         addRequestHandler("GiveCoins", GiveCoinsHandler.class);
         addRequestHandler("AdminCommand", AdminCommandHandler.class);
 
+        addRequestHandler("SkinStoreBuy", SkinStoreBuyHandler.class);
+        addRequestHandler("SkinStoreEquip", SkinStoreEquipHandler.class);
+        addRequestHandler("SkinStoreMine", SkinStoreMineHandler.class);
+        addRequestHandler("SkinStoreEquipParts", SkinStoreEquipPartsHandler.class);
+        addRequestHandler("SkinEarningsClaim", SkinEarningsClaimHandler.class);
+
         addRequestHandler("DONTKICKMEOUT", DontKickMeOutHandler.class);
 
         addRequestHandler("RequestEmailVerify", RequestEmailVerifyHandler.class);

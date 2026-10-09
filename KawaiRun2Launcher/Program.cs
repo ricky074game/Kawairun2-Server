@@ -16,7 +16,7 @@ namespace KawaiRun2Launcher;
 
 internal static class Program
 {
-    private const string DefaultVersion = "1.4.0";
+    private const string DefaultVersion = "1.5.0";
     private const string VersionFileName = "version.txt";
     private const string ConfigFileName = "launcher_config.json";
 
@@ -26,6 +26,8 @@ internal static class Program
     {
         string exeDirectory = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
         string currentVersionFromApp = DefaultVersion;
+
+        CommandLineOptions cliOptions = CommandLineOptions.Parse(args);
 
         // Use a temp folder tied to our app
         string tempDir = Path.Combine(Path.GetTempPath(), "KawaiRun2Launcher", "Runtime");
@@ -47,6 +49,13 @@ internal static class Program
 
         LauncherConfig config = LauncherConfig.Load(Path.Combine(tempDir, ConfigFileName));
         string platformKey = PlatformInfo.GetPackagePlatformKey();
+
+        if (cliOptions.OpenSkinMaker)
+        {
+            // Opens in the default browser and the launcher continues on to start the game as
+            // normal (this is a companion action, not an alternative to launching).
+            ExternalLinks.TryOpen(ExternalLinks.SkinMakerUrl);
+        }
 
         using var discord = DiscordPresenceService.TryCreate(config.Discord, currentVersionFromApp, platformKey);
 
@@ -73,6 +82,7 @@ internal static class Program
             }
 
             string flashExecutable = ResolveAndExtractFlash(tempDir);
+
             string swfPath = Path.Combine(tempDir, "game.swf");
             EnsureFileExists(swfPath, "game.swf");
 
@@ -417,6 +427,54 @@ internal sealed class LauncherException : Exception
     }
 
     public string Title { get; }
+}
+
+// --skinmaker opens the Skin Maker in the default browser as a companion
+// action alongside the normal launch. Any other argument is ignored.
+internal readonly struct CommandLineOptions
+{
+    public bool OpenSkinMaker { get; init; }
+
+    public static CommandLineOptions Parse(string[] args)
+    {
+        bool openSkinMaker = false;
+
+        foreach (string arg in args)
+        {
+            switch (arg.Trim().ToLowerInvariant())
+            {
+                case "--skinmaker":
+                    openSkinMaker = true;
+                    break;
+                default:
+                    // Unknown args are ignored.
+                    break;
+            }
+        }
+
+        return new CommandLineOptions
+        {
+            OpenSkinMaker = openSkinMaker
+        };
+    }
+}
+
+internal static class ExternalLinks
+{
+    public const string SkinMakerUrl = "https://kawairun2.puzzlebest.tech/skinmaker";
+
+    public static void TryOpen(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+        }
+        catch
+        {
+            // Best effort only - no default browser handler configured, or the shell call failed
+            // for some other reason. Either way this is a non-essential companion action.
+        }
+    }
 }
 
 internal sealed class LauncherConfig
