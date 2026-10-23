@@ -41,7 +41,7 @@ public class SkinStoreMineHandler extends BaseClientRequestHandler {
                 try (PreparedStatement st = c.prepareStatement(
                         "SELECT si.item_id, si.name, si.creator_name, si.price, si.kind FROM skin_owned so " +
                         "JOIN skin_items si ON si.item_id = so.item_id WHERE so.user_id = ? " +
-                        "ORDER BY so.acquired_at DESC, si.item_id DESC LIMIT " + MAX_ITEMS)) {
+                        "ORDER BY so.sort_pos ASC, so.acquired_at DESC, si.item_id DESC LIMIT " + MAX_ITEMS)) {
                     st.setInt(1, userId);
                     try (ResultSet rs = st.executeQuery()) {
                         while (rs.next()) {

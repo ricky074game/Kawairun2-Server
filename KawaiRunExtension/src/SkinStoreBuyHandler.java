@@ -40,7 +40,7 @@ public class SkinStoreBuyHandler extends BaseClientRequestHandler {
                 boolean found = false;
                 boolean buyable = false;
                 try (PreparedStatement st = c.prepareStatement(
-                        "SELECT si.creator_id, si.price, si.kind, si.listed, si.removed, u.is_active AS creator_active " +
+                        "SELECT si.creator_id, si.price, si.kind, si.listed, si.removed, si.approval, u.is_active AS creator_active " +
                         "FROM skin_items si JOIN users u ON u.user_id = si.creator_id WHERE si.item_id = ? FOR UPDATE")) {
                     st.setInt(1, id);
                     try (ResultSet rs = st.executeQuery()) {
@@ -49,15 +49,15 @@ public class SkinStoreBuyHandler extends BaseClientRequestHandler {
                             creatorId = rs.getInt("creator_id");
                             price = rs.getInt("price");
                             kind = SkinStoreSupport.normalizeKind(rs.getString("kind"));
-                            buyable = rs.getInt("listed") == 1 && rs.getInt("removed") == 0 && rs.getBoolean("creator_active");
+                            buyable = rs.getInt("listed") == 1 && rs.getInt("removed") == 0 && rs.getInt("approval") == 1 && rs.getBoolean("creator_active");
                         }
                     }
                 }
 
-                if (!found || !buyable) {
-                    error = "not_found";
-                } else if (creatorId == buyerId.intValue()) {
+                if (found && creatorId == buyerId.intValue()) {
                     error = "own_item";
+                } else if (!found || !buyable) {
+                    error = "not_found";
                 } else {
                     try (PreparedStatement st = c.prepareStatement(
                             "SELECT 1 FROM skin_owned WHERE user_id = ? AND item_id = ?")) {
@@ -91,7 +91,7 @@ public class SkinStoreBuyHandler extends BaseClientRequestHandler {
                             st.setInt(1, creatorId);
                             st.setInt(2, buyerId);
                             st.setInt(3, id);
-                            st.setInt(4, price);
+                            st.setInt(4, price * 70 / 100);
                             st.executeUpdate();
                         }
                     }

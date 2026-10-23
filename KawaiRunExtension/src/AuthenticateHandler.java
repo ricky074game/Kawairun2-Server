@@ -34,6 +34,10 @@ public class AuthenticateHandler extends BaseClientRequestHandler {
             if (dbManager.userExists(username)) {
                 trace("--- User " + username + " verified in database (existing account) ---");
 
+                ISFSObject skinView = new SFSObject();
+                skinView.putUtfString("t", SecurityUtils.skinViewToken(username));
+                send("SkinViewToken", skinView, user);
+
                 DatabaseManager.EmailInfo emailInfo = dbManager.getEmailInfo(username);
                 ISFSObject emailStatus = new SFSObject();
                 boolean verified = emailInfo != null && emailInfo.verified;

@@ -31,6 +31,7 @@ public final class SecurityUtils {
     private static final String MIN_CLIENT_VERSION = readConfig("kawairun.client.minVersion", "KAWAIRUN_MIN_CLIENT_VERSION", "1.3.0");
     private static final byte[] PASSWORD_PEPPER = readSecretBytes("kawairun.password.pepper", "KAWAIRUN_PASSWORD_PEPPER");
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final long SKIN_VIEW_TOKEN_TTL_SECONDS = 24L * 60L * 60L;
     private static final Base64.Encoder BASE64_ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder BASE64_DECODER = Base64.getUrlDecoder();
     private static final Set<String> BLOCKED_PASSWORDS = loadBlockedPasswords();
@@ -124,6 +125,28 @@ public final class SecurityUtils {
             return false;
         }
         return constantTimeEquals(providedHash, storedHash);
+    }
+
+    public static String skinViewToken(String username) {
+        try {
+            String view = readConfig("kawairun.view.secret", "KAWAIRUN_VIEW_SECRET", null);
+            byte[] secret = view != null ? view.getBytes(StandardCharsets.UTF_8) : PASSWORD_PEPPER;
+            if (secret.length == 0) {
+                return "";
+            }
+            byte[] key = hmacSha256(secret, "kr2-skin-view-key-v1");
+            long exp = System.currentTimeMillis() / 1000L + SKIN_VIEW_TOKEN_TTL_SECONDS;
+            String message = "v1|" + username.toLowerCase(Locale.ROOT) + "|" + exp;
+            return exp + "." + BASE64_ENCODER.encodeToString(hmacSha256(key, message));
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static byte[] hmacSha256(byte[] key, String message) throws Exception {
+        javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+        mac.init(new javax.crypto.spec.SecretKeySpec(key, "HmacSHA256"));
+        return mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
     }
 
     public static String maskEmail(String email) {

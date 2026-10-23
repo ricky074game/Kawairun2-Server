@@ -16,7 +16,7 @@ namespace KawaiRun2Launcher;
 
 internal static class Program
 {
-    private const string DefaultVersion = "1.5.0";
+    private const string DefaultVersion = "1.5.2";
     private const string VersionFileName = "version.txt";
     private const string ConfigFileName = "launcher_config.json";
 
