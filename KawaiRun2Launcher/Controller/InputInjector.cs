@@ -39,6 +39,7 @@ internal sealed class InputInjector
     private readonly Func<string> _injectionModeProvider;
     private int _projectorPid;
     private IntPtr _projectorHwnd;
+    private Func<IntPtr>? _hwndProvider;
 
     public InputInjector(Func<string> injectionModeProvider)
     {
@@ -47,10 +48,11 @@ internal sealed class InputInjector
 
     private bool UsePostMessage => string.Equals(_injectionModeProvider(), "postmessage", StringComparison.OrdinalIgnoreCase);
 
-    public void SetProjector(int pid, IntPtr hwnd)
+    public void SetProjector(int pid, Func<IntPtr> hwndProvider)
     {
         _projectorPid = pid;
-        _projectorHwnd = hwnd;
+        _hwndProvider = hwndProvider;
+        _projectorHwnd = hwndProvider();
     }
 
     public void RefreshProjectorHandle()
@@ -59,7 +61,7 @@ internal sealed class InputInjector
         {
             return;
         }
-        IntPtr resolved = FlashWindowCustomizer.FindMainWindow(_projectorPid);
+        IntPtr resolved = _hwndProvider?.Invoke() ?? IntPtr.Zero;
         if (resolved != IntPtr.Zero)
         {
             _projectorHwnd = resolved;
@@ -70,17 +72,12 @@ internal sealed class InputInjector
 
     public bool IsProjectorForeground()
     {
-        if (_projectorPid == 0)
+        if (_projectorPid == 0 || _projectorHwnd == IntPtr.Zero)
         {
             return false;
         }
         IntPtr fg = Native.GetForegroundWindow();
-        if (fg == IntPtr.Zero)
-        {
-            return false;
-        }
-        Native.GetWindowThreadProcessId(fg, out uint pid);
-        return pid == (uint)_projectorPid;
+        return fg == _projectorHwnd || fg == Native.GetAncestor(_projectorHwnd, 2);
     }
 
     public void KeyDown(string token) => SendKeyEvent(token, down: true, force: false);

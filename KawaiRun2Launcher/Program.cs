@@ -8,6 +8,10 @@ using System.Text;
 using System.Text.Json;
 using System.Reflection;
 using DiscordRPC;
+using KawaiRun2Launcher.Hosting;
+#if HAS_WEBVIEW2
+using System.Windows.Forms;
+#endif
 #if HAS_CONTROLLER
 using KawaiRun2Launcher.Controller;
 #endif
@@ -16,13 +20,16 @@ namespace KawaiRun2Launcher;
 
 internal static class Program
 {
-    private const string DefaultVersion = "1.5.2";
+    private const string DefaultVersion = "2.0.0";
     private const string VersionFileName = "version.txt";
     private const string ConfigFileName = "launcher_config.json";
 
     private static readonly HttpClient HttpClient = CreateHttpClient();
 
-    private static async Task<int> Main(string[] args)
+    // Synchronous on purpose: the native window (WinForms/WebView2, and Cocoa via Photino) has to be
+    // created and pumped on the process main thread. Only the pre-launch work runs on the thread pool.
+    [STAThread]
+    private static int Main(string[] args)
     {
         string exeDirectory = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
         string currentVersionFromApp = DefaultVersion;
@@ -31,19 +38,20 @@ internal static class Program
 
         // Use a temp folder tied to our app
         string tempDir = Path.Combine(Path.GetTempPath(), "KawaiRun2Launcher", "Runtime");
-        Directory.CreateDirectory(tempDir);
 
         try
         {
+            Directory.CreateDirectory(tempDir);
             ExtractResource("launcher_config.json", Path.Combine(tempDir, ConfigFileName));
             ExtractResource("version.txt", Path.Combine(tempDir, VersionFileName));
-            ExtractResource("game.swf", Path.Combine(tempDir, "game.swf"));
+            ExtractResource("kawairun2icon.ico", Path.Combine(tempDir, "kawairun2icon.ico"));
+            ExtractResource("kawairun2icon.png", Path.Combine(tempDir, "kawairun2icon.png"));
 
             currentVersionFromApp = ReadTrimmedFile(Path.Combine(tempDir, VersionFileName)) ?? DefaultVersion;
         }
         catch (Exception ex)
         {
-            await UserDialogs.ShowErrorAsync("Initialization Error", $"Failed to extract resources.\n\n{ex.Message}");
+            UserDialogs.ShowErrorAsync("Initialization Error", $"Failed to extract resources.\n\n{ex.Message}").GetAwaiter().GetResult();
             return 1;
         }
 
@@ -61,87 +69,249 @@ internal static class Program
 
         try
         {
-            UpdateManifest? manifest = await TryFetchUpdateManifestAsync(config.UpdateManifestUrl);
-            if (manifest is not null)
+            bool updating = Task.Run(() => TryUpdateAsync(exeDirectory, currentVersionFromApp, platformKey, discord)).GetAwaiter().GetResult();
+            if (updating)
             {
-                UpdateDecision decision = UpdateDecision.Create(currentVersionFromApp, platformKey, manifest);
-                if (decision.RequiresUpdate)
+                return 0;
+            }
+
+            if (cliOptions.ServeOnly)
+            {
+                LocalWebServer server = StartWebServer(currentVersionFromApp, platformKey);
+                Console.WriteLine(server.Url);
+                Console.Out.Flush();
+                ShutdownSignal.Wait();
+                server.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                return 0;
+            }
+
+            string mode = PlayMode.Load();
+            if (mode == PlayMode.Html5 && !CanRunHtml5())
+            {
+                mode = PlayMode.Flash;
+            }
+
+            while (true)
+            {
+                bool switching = mode == PlayMode.Flash
+                    ? RunFlash(config, discord, tempDir)
+                    : RunHtml5(currentVersionFromApp, platformKey, config, cliOptions, discord, tempDir);
+                if (!switching)
                 {
-                    bool shouldInstall = decision.IsCritical ||
-                        await UserDialogs.ConfirmAsync(
-                            "Update Available",
-                            $"Version {decision.TargetVersion} is available for {platformKey}.\n\nInstall now?");
-
-                    if (shouldInstall)
-                    {
-                        discord?.SetState("Updating game");
-                        await InstallUpdateAsync(exeDirectory, decision, manifest);
-                        return 0;
-                    }
+                    return 0;
                 }
-            }
 
-            string flashExecutable = ResolveAndExtractFlash(tempDir);
-
-            string swfPath = Path.Combine(tempDir, "game.swf");
-            EnsureFileExists(swfPath, "game.swf");
-
-            discord?.SetState("Launching game");
-            using Process gameProcess = StartFlashProcess(flashExecutable, swfPath, tempDir);
-
-            if (OperatingSystem.IsWindows())
-            {
-                string iconPath = Path.Combine(tempDir, "kawairun2icon.ico");
-                ExtractResource("kawairun2icon.ico", iconPath);
-                _ = Task.Run(() => FlashWindowCustomizer.TryRenameAndSetIconAsync(gameProcess.Id, config.WindowTitle, iconPath));
-            }
-
-#if HAS_CONTROLLER
-            ControllerService? controllerService = null;
-#endif
-            try
-            {
-#if HAS_CONTROLLER
-                if (OperatingSystem.IsWindows())
+                if (mode == PlayMode.Html5)
                 {
-                    controllerService = new ControllerService(tempDir);
-                    controllerService.Start(gameProcess);
+                    mode = PlayMode.Flash;
                 }
-#endif
-
-                discord?.SetState("Playing KawaiRun 2");
-                await gameProcess.WaitForExitAsync();
-
-                return gameProcess.ExitCode;
-            }
-            finally
-            {
-#if HAS_CONTROLLER
-                controllerService?.Stop();
-#endif
+                else if (CanRunHtml5())
+                {
+                    mode = PlayMode.Html5;
+                }
+                else
+                {
+                    ShowHtml5Unavailable();
+                }
+                PlayMode.Save(mode);
             }
         }
         catch (LauncherException ex)
         {
-            await UserDialogs.ShowErrorAsync(ex.Title, ex.Message);
+            UserDialogs.ShowErrorAsync(ex.Title, ex.Message).GetAwaiter().GetResult();
             return 1;
         }
         catch (Exception ex)
         {
-            await UserDialogs.ShowErrorAsync("Launcher Error", ex.ToString());
+            UserDialogs.ShowErrorAsync("Launcher Error", ex.ToString()).GetAwaiter().GetResult();
             return 1;
         }
     }
 
-    private static void ExtractResource(string resourceName, string outputPath)
+    private static async Task<bool> TryUpdateAsync(string exeDirectory, string version, string platformKey, DiscordPresenceService? discord)
     {
-        using Stream? stream = typeof(Program).Assembly.GetManifestResourceStream(resourceName);
-        if (stream == null)
+        LauncherConfig config = LauncherConfig.Load(Path.Combine(Path.GetTempPath(), "KawaiRun2Launcher", "Runtime", ConfigFileName));
+        UpdateManifest? manifest = await TryFetchUpdateManifestAsync(config.UpdateManifestUrl);
+        if (manifest is null)
         {
-            return;
+            return false;
         }
-        using FileStream fs = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
-        stream.CopyTo(fs);
+
+        UpdateDecision decision = UpdateDecision.Create(version, platformKey, manifest);
+        if (!decision.RequiresUpdate)
+        {
+            return false;
+        }
+
+        bool shouldInstall = decision.IsCritical ||
+            await UserDialogs.ConfirmAsync(
+                "Update Available",
+                $"Version {decision.TargetVersion} is available for {platformKey}.\n\nInstall now?");
+        if (!shouldInstall)
+        {
+            return false;
+        }
+
+        discord?.SetState("Updating game");
+        await InstallUpdateAsync(exeDirectory, decision, manifest);
+        return true;
+    }
+
+    private static LocalWebServer StartWebServer(string version, string platformKey)
+    {
+        string webDir = WebAssets.EnsureExtracted(version);
+        return Task.Run(() => LocalWebServer.StartAsync(webDir, version, platformKey)).GetAwaiter().GetResult();
+    }
+
+    private static bool CanRunHtml5()
+    {
+#if HAS_WEBVIEW2
+        return Environment.OSVersion.Version.Major >= 10 && WindowsHost.IsRuntimeAvailable();
+#else
+        return true;
+#endif
+    }
+
+    private static void ShowHtml5Unavailable()
+    {
+#if HAS_WEBVIEW2
+        string message = Environment.OSVersion.Version.Major >= 10
+            ? "HTML5 mode needs the Microsoft Edge WebView2 Runtime.\n\nOpen the download page?"
+            : "HTML5 mode needs Windows 10 or newer. This computer keeps playing in Flash mode.\n\nOpen the WebView2 page anyway?";
+        if (UserDialogs.ConfirmAsync("HTML5 not available", message).GetAwaiter().GetResult())
+        {
+            ExternalLinks.TryOpen(WindowsHost.RuntimeDownloadUrl);
+        }
+#endif
+    }
+
+    private static bool RunHtml5(
+        string version, string platformKey, LauncherConfig config, CommandLineOptions cliOptions, DiscordPresenceService? discord, string tempDir)
+    {
+        discord?.SetState("Launching game");
+        LocalWebServer server = StartWebServer(version, platformKey);
+        bool switching = false;
+        try
+        {
+#if HAS_WEBVIEW2
+            object controllerLock = new();
+            bool windowClosed = false;
+            ControllerService? controllerService = null;
+
+            HostLaunch launch = new()
+            {
+                Url = server.Url,
+                Title = config.WindowTitle,
+                DevTools = cliOptions.DevTools,
+                OnSwitchMode = () => switching = true,
+                OnWindowReady = hwnd =>
+                {
+                    discord?.SetState("Playing KawaiRun 2");
+                    if (hwnd == IntPtr.Zero)
+                    {
+                        return;
+                    }
+
+                    Task.Run(() =>
+                    {
+                        lock (controllerLock)
+                        {
+                            if (windowClosed)
+                            {
+                                return;
+                            }
+
+                            try
+                            {
+                                controllerService = new ControllerService(tempDir);
+                                controllerService.Start(Environment.ProcessId, () => hwnd, () => windowClosed);
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"[controller] failed to start: {ex}");
+                                controllerService = null;
+                            }
+                        }
+                    });
+                },
+                OnWindowClosed = () =>
+                {
+                    ControllerService? toStop;
+                    lock (controllerLock)
+                    {
+                        windowClosed = true;
+                        toStop = controllerService;
+                        controllerService = null;
+                    }
+                    toStop?.Stop();
+                }
+            };
+
+            WindowsHost.Run(launch);
+#else
+            HostLaunch launch = new()
+            {
+                Url = server.Url,
+                Title = config.WindowTitle,
+                DevTools = cliOptions.DevTools,
+                OnCloseAvailable = close => server.SwitchRequested = () =>
+                {
+                    switching = true;
+                    close();
+                },
+                OnWindowReady = _ => discord?.SetState("Playing KawaiRun 2")
+            };
+
+            PhotinoHost.Run(launch, Path.Combine(tempDir, "kawairun2icon.png"));
+#endif
+        }
+        finally
+        {
+            try { server.DisposeAsync().AsTask().GetAwaiter().GetResult(); } catch { }
+        }
+
+        return switching;
+    }
+
+    private static bool RunFlash(LauncherConfig config, DiscordPresenceService? discord, string tempDir)
+    {
+        string flashExecutable = ResolveAndExtractFlash(tempDir);
+        string swfPath = Path.Combine(tempDir, "game.swf");
+        ExtractResourceIfChanged("game.swf", swfPath);
+        EnsureFileExists(swfPath, "game.swf");
+
+        discord?.SetState("Launching game");
+        using Process gameProcess = StartFlashProcess(flashExecutable, swfPath, tempDir);
+
+        bool switching = false;
+        discord?.SetState("Playing KawaiRun 2");
+#if HAS_WEBVIEW2
+        using FlashForm form = new(gameProcess, config.WindowTitle, () => switching = true);
+        ControllerService? controllerService = null;
+        try
+        {
+            controllerService = new ControllerService(tempDir);
+            controllerService.Start(gameProcess.Id, () => form.FlashHandle, () => gameProcess.HasExited);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[controller] failed to start: {ex}");
+            controllerService = null;
+        }
+
+        Application.Run(form);
+        controllerService?.Stop();
+#else
+        using FlashSwitchListener listener = new(() =>
+        {
+            switching = true;
+            try { gameProcess.Kill(); } catch { }
+        });
+        listener.Start();
+        gameProcess.WaitForExit();
+#endif
+
+        return switching;
     }
 
     private static string ResolveAndExtractFlash(string extractDir)
@@ -149,7 +319,7 @@ internal static class Program
         if (OperatingSystem.IsWindows())
         {
             string flashPath = Path.Combine(extractDir, "flash.exe");
-            ExtractResource("flash.exe", flashPath);
+            ExtractResourceIfChanged("flash.exe", flashPath);
             EnsureFileExists(flashPath, "flash.exe");
             return flashPath;
         }
@@ -159,7 +329,6 @@ internal static class Program
             string macAppZip = Path.Combine(extractDir, "mac_flash.zip");
             string macAppDir = Path.Combine(extractDir, "Flash Player.app");
             string execPath = Path.Combine(macAppDir, "Contents", "MacOS", "Flash Player");
-
 
             if (!File.Exists(execPath))
             {
@@ -176,13 +345,13 @@ internal static class Program
                 RunUnixTool("xattr", "-dr", "com.apple.quarantine", macAppDir);
                 return execPath;
             }
-            throw new LauncherException("Missing Flash Projector", "Could not extract or locate macOS Flash projector.");
+            throw new LauncherException("Missing Flash Projector", "Could not extract or locate the macOS Flash projector.");
         }
 
         if (OperatingSystem.IsLinux())
         {
             string flashPath = Path.Combine(extractDir, "linux_flash");
-            ExtractResource("linux_flash", flashPath);
+            ExtractResourceIfChanged("linux_flash", flashPath);
             EnsureFileExists(flashPath, "linux_flash");
             RunUnixTool("chmod", "+x", flashPath);
             return flashPath;
@@ -210,6 +379,55 @@ internal static class Program
         catch
         {
         }
+    }
+
+    private static Process StartFlashProcess(string flashExecutable, string swfPath, string baseDirectory)
+    {
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = flashExecutable,
+            WorkingDirectory = baseDirectory,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add(swfPath);
+
+        if (OperatingSystem.IsLinux())
+        {
+            startInfo.EnvironmentVariables["VDPAU_DRIVER"] = "va_gl";
+            startInfo.EnvironmentVariables["LIBVA_DRIVER_NAME"] = "i965";
+        }
+
+        try
+        {
+            return Process.Start(startInfo)
+                   ?? throw new LauncherException("Launcher Error", "The Flash projector did not start.");
+        }
+        catch (Win32Exception ex)
+        {
+            throw new LauncherException("Launcher Error", $"Failed to start the Flash projector.\n\n{ex.Message}");
+        }
+    }
+
+    private static void ExtractResourceIfChanged(string resourceName, string outputPath)
+    {
+        using Stream? stream = typeof(Program).Assembly.GetManifestResourceStream(resourceName);
+        if (stream == null || (File.Exists(outputPath) && new FileInfo(outputPath).Length == stream.Length))
+        {
+            return;
+        }
+        using FileStream fs = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+        stream.CopyTo(fs);
+    }
+
+    private static void ExtractResource(string resourceName, string outputPath)
+    {
+        using Stream? stream = typeof(Program).Assembly.GetManifestResourceStream(resourceName);
+        if (stream == null)
+        {
+            return;
+        }
+        using FileStream fs = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+        stream.CopyTo(fs);
     }
 
     private static HttpClient CreateHttpClient()
@@ -362,40 +580,6 @@ open "{EscapeForShell(launcherPath)}" || "{EscapeForShell(launcherPath)}" &
         }
     }
 
-    private static Process StartFlashProcess(string flashExecutable, string swfPath, string baseDirectory)
-    {
-        ProcessStartInfo startInfo = new()
-        {
-            FileName = flashExecutable,
-            WorkingDirectory = baseDirectory,
-            UseShellExecute = false
-        };
-        startInfo.ArgumentList.Add(swfPath);
-
-        if (OperatingSystem.IsLinux())
-        {
-            startInfo.EnvironmentVariables["VDPAU_DRIVER"] = "va_gl";
-            startInfo.EnvironmentVariables["LIBVA_DRIVER_NAME"] = "i965";
-        }
-
-        try
-        {
-            string mmsPath = Path.Combine(baseDirectory, "mms.cfg");
-            File.WriteAllText(mmsPath, "OverrideGPUValidation=1\nHardwareAccelerationDisabled=0\nEnableLinuxHWVideoDecode=1\n");
-        }
-        catch { }
-
-        try
-        {
-            return Process.Start(startInfo)
-                   ?? throw new LauncherException("Launcher Error", "The Flash projector did not start.");
-        }
-        catch (Win32Exception ex)
-        {
-            throw new LauncherException("Launcher Error", $"Failed to start the Flash projector.\n\n{ex.Message}");
-        }
-    }
-
     private static void EnsureFileExists(string path, string displayName)
     {
         if (!File.Exists(path))
@@ -429,15 +613,92 @@ internal sealed class LauncherException : Exception
     public string Title { get; }
 }
 
-// --skinmaker opens the Skin Maker in the default browser as a companion
-// action alongside the normal launch. Any other argument is ignored.
+// --skinmaker opens the Skin Maker in the default browser as a companion action alongside the normal
+// launch. --serve-only starts just the local server (no window; headless testing). --devtools enables
+// the embedded browser's dev tools and context menu. Any other argument is ignored.
+internal static class FlashWindowCustomizer
+{
+    private const int WM_SETICON = 0x0080;
+    private const int ICON_SMALL = 0;
+    private const int ICON_BIG = 1;
+    private const uint IMAGE_ICON = 1;
+    private const uint LR_LOADFROMFILE = 0x00000010;
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern IntPtr LoadImage(IntPtr hinst, string lpszName, uint uType, int cxDesired, int cyDesired, uint fuLoad);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetMenu(IntPtr hWnd, IntPtr hMenu);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool SetWindowTextW(IntPtr hWnd, string lpString);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    public static async Task TryRenameAndSetIconAsync(int processId, string title, string iconPath)
+    {
+        for (int attempt = 0; attempt < 50; attempt++)
+        {
+            IntPtr windowHandle = FindMainWindow(processId);
+            if (windowHandle != IntPtr.Zero)
+            {
+                SetWindowTextW(windowHandle, title);
+                SetMenu(windowHandle, IntPtr.Zero);
+                if (File.Exists(iconPath))
+                {
+                    IntPtr hIconSmall = LoadImage(IntPtr.Zero, iconPath, IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
+                    IntPtr hIconBig = LoadImage(IntPtr.Zero, iconPath, IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+                    if (hIconSmall != IntPtr.Zero) SendMessage(windowHandle, WM_SETICON, (IntPtr)ICON_SMALL, hIconSmall);
+                    if (hIconBig != IntPtr.Zero) SendMessage(windowHandle, WM_SETICON, (IntPtr)ICON_BIG, hIconBig);
+                }
+                return;
+            }
+
+            await Task.Delay(200);
+        }
+    }
+
+    internal static IntPtr FindMainWindow(int processId)
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((hWnd, _) =>
+        {
+            GetWindowThreadProcessId(hWnd, out uint ownerPid);
+            if (ownerPid == processId && IsWindowVisible(hWnd))
+            {
+                found = hWnd;
+                return false;
+            }
+
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+}
+
 internal readonly struct CommandLineOptions
 {
     public bool OpenSkinMaker { get; init; }
+    public bool ServeOnly { get; init; }
+    public bool DevTools { get; init; }
 
     public static CommandLineOptions Parse(string[] args)
     {
         bool openSkinMaker = false;
+        bool serveOnly = false;
+        bool devTools = false;
 
         foreach (string arg in args)
         {
@@ -445,6 +706,12 @@ internal readonly struct CommandLineOptions
             {
                 case "--skinmaker":
                     openSkinMaker = true;
+                    break;
+                case "--serve-only":
+                    serveOnly = true;
+                    break;
+                case "--devtools":
+                    devTools = true;
                     break;
                 default:
                     // Unknown args are ignored.
@@ -454,7 +721,9 @@ internal readonly struct CommandLineOptions
 
         return new CommandLineOptions
         {
-            OpenSkinMaker = openSkinMaker
+            OpenSkinMaker = openSkinMaker,
+            ServeOnly = serveOnly,
+            DevTools = devTools
         };
     }
 }
@@ -680,7 +949,9 @@ internal static class PlatformInfo
     {
         if (OperatingSystem.IsWindows())
         {
-            return Environment.Is64BitOperatingSystem ? "win-x64" : "win-x86";
+            bool armRunningX86 = RuntimeInformation.OSArchitecture == Architecture.Arm64 &&
+                                 RuntimeInformation.ProcessArchitecture == Architecture.X86;
+            return Environment.Is64BitOperatingSystem && !armRunningX86 ? "win-x64" : "win-x86";
         }
 
         if (OperatingSystem.IsMacOS())
@@ -688,7 +959,7 @@ internal static class PlatformInfo
             return "osx-x64";
         }
 
-        // Only an x86_64 Linux projector is bundled, so we always map Linux to linux-x64.
+        // Only an x86_64 Linux package is published, so we always map Linux to linux-x64.
         // (RuntimeInformation.RuntimeIdentifier can report a distro-specific RID that would
         // never match the update manifest keys.)
         if (OperatingSystem.IsLinux())
@@ -763,74 +1034,3 @@ internal static class UserDialogs
     private static int NativeMessageBox(IntPtr handle, string text, string caption, uint type) => MessageBoxW(handle, text, caption, type);
 }
 
-internal static class FlashWindowCustomizer
-{
-    private const int WM_SETICON = 0x0080;
-    private const int ICON_SMALL = 0;
-    private const int ICON_BIG = 1;
-    private const uint IMAGE_ICON = 1;
-    private const uint LR_LOADFROMFILE = 0x00000010;
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-    private static extern IntPtr LoadImage(IntPtr hinst, string lpszName, uint uType, int cxDesired, int cyDesired, uint fuLoad);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetMenu(IntPtr hWnd, IntPtr hMenu);
-
-    public static async Task TryRenameAndSetIconAsync(int processId, string title, string iconPath)
-    {
-        for (int attempt = 0; attempt < 50; attempt++)
-        {
-            IntPtr windowHandle = FindMainWindow(processId);
-            if (windowHandle != IntPtr.Zero)
-            {
-                SetWindowTextW(windowHandle, title);
-                SetMenu(windowHandle, IntPtr.Zero);
-                if (File.Exists(iconPath))
-                {
-                    IntPtr hIconSmall = LoadImage(IntPtr.Zero, iconPath, IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
-                    IntPtr hIconBig = LoadImage(IntPtr.Zero, iconPath, IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
-                    if (hIconSmall != IntPtr.Zero) SendMessage(windowHandle, WM_SETICON, (IntPtr)ICON_SMALL, hIconSmall);
-                    if (hIconBig != IntPtr.Zero) SendMessage(windowHandle, WM_SETICON, (IntPtr)ICON_BIG, hIconBig);
-                }
-                return;
-            }
-
-            await Task.Delay(200);
-        }
-    }
-
-    internal static IntPtr FindMainWindow(int processId)
-    {
-        IntPtr found = IntPtr.Zero;
-        EnumWindows((hWnd, _) =>
-        {
-            GetWindowThreadProcessId(hWnd, out uint ownerPid);
-            if (ownerPid == processId && IsWindowVisible(hWnd))
-            {
-                found = hWnd;
-                return false;
-            }
-
-            return true;
-        }, IntPtr.Zero);
-        return found;
-    }
-
-    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-    [DllImport("user32.dll")]
-    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-
-    [DllImport("user32.dll")]
-    private static extern bool IsWindowVisible(IntPtr hWnd);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern bool SetWindowTextW(IntPtr hWnd, string lpString);
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-}

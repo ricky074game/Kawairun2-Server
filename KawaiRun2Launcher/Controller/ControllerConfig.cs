@@ -342,7 +342,8 @@ internal sealed class ControllerRootConfig
         {
             SchemaVersion = 1;
         }
-        if (InjectionMode is not ("sendinput" or "postmessage"))
+        // WebView2 ignores posted window messages, so only real input injection works.
+        if (InjectionMode is not "sendinput")
         {
             InjectionMode = "sendinput";
         }

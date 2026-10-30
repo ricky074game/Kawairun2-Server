@@ -8,32 +8,45 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <DebugType>embedded</DebugType>
     <AssemblyName>KawaiRun2Launcher</AssemblyName>
     <RootNamespace>KawaiRun2Launcher</RootNamespace>
     <ApplicationIcon>kawairun2icon.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
   <PropertyGroup Condition="'$(TargetFramework)'=='net8.0-windows'">
     <UseWindowsForms>true</UseWindowsForms>
-    <DefineConstants>$(DefineConstants);HAS_CONTROLLER</DefineConstants>
+    <DefineConstants>$(DefineConstants);HAS_CONTROLLER;HAS_WEBVIEW2</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)'=='net8.0-windows'">
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)'=='net8.0'">
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Controller/**" Condition="'$(TargetFramework)'=='net8.0'" />
+    <Compile Remove="Hosting/WindowsHost.cs" Condition="'$(TargetFramework)'=='net8.0'" />
+    <Compile Remove="Hosting/FlashWindow.cs" Condition="'$(TargetFramework)'=='net8.0'" />
+    <Compile Remove="Hosting/PhotinoHost.cs" Condition="'$(TargetFramework)'=='net8.0-windows'" />
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="game.swf" LogicalName="game.swf" />
     <EmbeddedResource Include="launcher_config.json" LogicalName="launcher_config.json" />
     <EmbeddedResource Include="version.txt" LogicalName="version.txt" />
     <EmbeddedResource Include="kawairun2icon.ico" LogicalName="kawairun2icon.ico" />
-    <EmbeddedResource Include="flash.exe" LogicalName="flash.exe" Condition="'$(RuntimeIdentifier)' == 'win-x64' or '$(RuntimeIdentifier)' == 'win-x86'" />
-    <EmbeddedResource Include="mac_flash.zip" LogicalName="mac_flash.zip" Condition="'$(RuntimeIdentifier)' == 'osx-x64'" />
-    <EmbeddedResource Include="linux_flash" LogicalName="linux_flash" Condition="'$(RuntimeIdentifier)' == 'linux-x64'" />
+    <EmbeddedResource Include="kawairun2icon.png" LogicalName="kawairun2icon.png" />
+    <EmbeddedResource Include="webgame.zip" LogicalName="webgame.zip" Condition="Exists('webgame.zip')" />
+    <EmbeddedResource Include="game.swf" LogicalName="game.swf" />
+    <EmbeddedResource Include="flash.exe" LogicalName="flash.exe" Condition="$(RuntimeIdentifier.StartsWith('win'))" />
+    <EmbeddedResource Include="mac_flash.zip" LogicalName="mac_flash.zip" Condition="$(RuntimeIdentifier.StartsWith('osx'))" />
+    <EmbeddedResource Include="linux_flash" LogicalName="linux_flash" Condition="$(RuntimeIdentifier.StartsWith('linux'))" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)'=='net8.0-windows'">
     <EmbeddedResource Include="Controller/gamepad-bridge.ps1" LogicalName="gamepad-bridge.ps1" />

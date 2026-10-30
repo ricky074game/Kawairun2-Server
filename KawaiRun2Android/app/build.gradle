@@ -1,0 +1,72 @@
+plugins {
+    id "com.android.application"
+}
+
+def keyProps = new Properties()
+def keyFile = new File(System.getProperty("user.home"), ".android-keys/kawairun2/keystore.properties")
+if (keyFile.exists()) {
+    keyFile.withInputStream { keyProps.load(it) }
+}
+
+def webBuild = rootProject.file("../webrewrite/dist")
+def webAssets = layout.buildDirectory.dir("generated/webAssets")
+
+def syncWeb = tasks.register("syncWeb", Sync) {
+    from(webBuild) {
+        exclude "**/*.low.webp", "**/*.map"
+    }
+    into(webAssets.map { it.dir("web") })
+}
+
+android {
+    namespace "tech.puzzlebest.kawairun2"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "tech.puzzlebest.kawairun2"
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName "2.0.0"
+        manifestPlaceholders = [cleartext: "false"]
+    }
+
+    signingConfigs {
+        release {
+            if (keyFile.exists()) {
+                storeFile new File(keyFile.parentFile, keyProps.getProperty("storeFile"))
+                storePassword keyProps.getProperty("storePassword")
+                keyAlias keyProps.getProperty("keyAlias")
+                keyPassword keyProps.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            manifestPlaceholders = [cleartext: "true"]
+        }
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+
+    sourceSets {
+        main {
+            assets.srcDir(webAssets)
+        }
+    }
+
+    androidResources {
+        noCompress "webp", "mp3", "ogg", "ttf"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn(syncWeb)
+}

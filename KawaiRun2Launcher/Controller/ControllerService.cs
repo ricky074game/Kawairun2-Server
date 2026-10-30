@@ -34,7 +34,7 @@ internal sealed class ControllerService
     private readonly object _configLock = new();
     private ControllerRootConfig _config;
 
-    private Process? _gameProcess;
+    private Func<bool>? _gameExited;
     private Thread? _pollThread;
     private Thread? _uiThread;
     private volatile bool _running;
@@ -79,18 +79,17 @@ internal sealed class ControllerService
 
     public void SuspendInjection(bool suspended) => Mapper.SetSuspended(suspended);
 
-    public void Start(Process gameProcess)
+    public void Start(int processId, Func<IntPtr> windowHandleProvider, Func<bool> gameExited)
     {
         if (!OperatingSystem.IsWindows() || _running)
         {
             return;
         }
 
-        _gameProcess = gameProcess;
+        _gameExited = gameExited;
         _running = true;
 
-        IntPtr hwnd = ResolveProjectorHandleWithRetry(gameProcess.Id);
-        Injector.SetProjector(gameProcess.Id, hwnd);
+        Injector.SetProjector(processId, windowHandleProvider);
 
         PadManager.Start();
 
@@ -172,20 +171,6 @@ internal sealed class ControllerService
         }
     }
 
-    private static IntPtr ResolveProjectorHandleWithRetry(int processId)
-    {
-        for (int attempt = 0; attempt < 50; attempt++)
-        {
-            IntPtr handle = FlashWindowCustomizer.FindMainWindow(processId);
-            if (handle != IntPtr.Zero)
-            {
-                return handle;
-            }
-            Thread.Sleep(100);
-        }
-        return IntPtr.Zero;
-    }
-
     private void PollLoop()
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
@@ -207,7 +192,7 @@ internal sealed class ControllerService
                 dt = 0.25;
             }
 
-            if (_gameProcess is { HasExited: true })
+            if (_gameExited is not null && _gameExited())
             {
                 _running = false;
                 break;

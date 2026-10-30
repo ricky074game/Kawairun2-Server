@@ -10,6 +10,7 @@ KawaiRun2Launcher/publish/
 KawaiRun2Launcher/mac_flash.zip
 KawaiRun2Launcher/mac_flash/
 KawaiRun2Launcher/linux_flash
+KawaiRun2Launcher/webgame.zip
 KawaiRun2Launcher/kawairun2icon.ico
 KawaiRun2Launcher/build.ps1
 Server/
@@ -18,3 +19,14 @@ compile_game.ps1
 setup_and_run_local.ps1
 webrewrite/
 extracted_scripts_hax/
+.claude/
+*.iml
+*.bak-*
+KawaiRun2Launcher/game.swf
+KawaiRun2Android/.gradle/
+KawaiRun2Android/build/
+KawaiRun2Android/app/build/
+KawaiRun2Android/local.properties
+*.apk
+*.keystore
+*.jks

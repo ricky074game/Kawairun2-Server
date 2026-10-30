@@ -188,7 +188,7 @@ internal sealed class ConfigForm : Form
 
         Label injLbl = new() { Location = new Point(10, 88), Size = new Size(120, 20), Text = "Injection mode:" };
         _injectionModeCombo = new ComboBox { Location = new Point(130, 86), Size = new Size(140, 22), DropDownStyle = ComboBoxStyle.DropDownList };
-        _injectionModeCombo.Items.AddRange(new object[] { "sendinput", "postmessage" });
+        _injectionModeCombo.Items.AddRange(new object[] { "sendinput" });
         _injectionModeCombo.SelectedIndexChanged += (_, _) => { if (!_suppressEvents) _service.UpdateConfig(c => c.InjectionMode = (string)_injectionModeCombo.SelectedItem!); };
 
         globalTab.Controls.AddRange(new Control[] { _globalEnabledChk, _p2EnabledChk, _oskEnabledChk, injLbl, _injectionModeCombo });
