@@ -35,8 +35,8 @@ $publishRoot = Join-Path $launchDir "publish"
 $serverLauncherDir = if ($OutDir) { $OutDir } else { Join-Path (Split-Path $launchDir -Parent) "Server\launcher" }
 $projectFile = Join-Path $launchDir "KawaiRun2Launcher.csproj"
 $webDir = Join-Path (Split-Path $launchDir -Parent) "webrewrite"
-$webDist = if ($WebDist) { $WebDist } else { Join-Path $webDir "dist" }
 if ($WebDist) { $SkipWebBuild = [switch]$true }
+$webDist = if ($WebDist) { $WebDist } else { Join-Path $webDir "dist" }
 $webZip = Join-Path $launchDir "webgame.zip"
 $rids = @("win-x86", "win-x64", "osx-x64", "linux-x64")
 
